@@ -2,10 +2,8 @@ import { setRequestLocale } from 'next-intl/server';
 import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { CreditCard, Plus, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { CheckCircle, XCircle } from 'lucide-react';
+import { TopupForm, RevokeButton, CopyCodeButton } from '@/components/admin/topup-form';
 
 interface AdminTopupPageProps {
     params: Promise<{ locale: string }>;
@@ -30,30 +28,23 @@ export default async function AdminTopupPage({ params }: AdminTopupPageProps) {
 
     const t = {
         title: locale === 'ar' ? 'أكواد الشحن' : 'Top-up Codes',
-        generateCode: locale === 'ar' ? 'إنشاء كود' : 'Generate Code',
-        amount: locale === 'ar' ? 'المبلغ' : 'Amount',
-        generate: locale === 'ar' ? 'إنشاء' : 'Generate',
         active: locale === 'ar' ? 'نشط' : 'Active',
         redeemed: locale === 'ar' ? 'مستخدم' : 'Redeemed',
         revoked: locale === 'ar' ? 'ملغي' : 'Revoked',
         noCodes: locale === 'ar' ? 'لا توجد أكواد' : 'No codes',
-        copyCode: locale === 'ar' ? 'نسخ' : 'Copy',
-        revokeCode: locale === 'ar' ? 'إلغاء' : 'Revoke',
         createdOn: locale === 'ar' ? 'أنشئ في' : 'Created',
-        redeemedBy: locale === 'ar' ? 'استخدم بواسطة' : 'Redeemed by',
+        allCodes: locale === 'ar' ? 'جميع الأكواد' : 'All Codes',
     };
 
     const statusBadges = {
         active: { variant: 'default' as const, icon: CheckCircle, class: 'bg-green-100 text-green-800' },
-        redeemed: { variant: 'secondary' as const, icon: Clock, class: '' },
+        redeemed: { variant: 'secondary' as const, icon: null, class: '' },
         revoked: { variant: 'destructive' as const, icon: XCircle, class: '' },
     };
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <h1 className="text-2xl font-bold">{t.title}</h1>
-            </div>
+            <h1 className="text-2xl font-bold">{t.title}</h1>
 
             {/* Stats */}
             <div className="grid gap-4 md:grid-cols-3">
@@ -84,31 +75,12 @@ export default async function AdminTopupPage({ params }: AdminTopupPageProps) {
             </div>
 
             {/* Generate New Code */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Plus className="h-5 w-5" />
-                        {t.generateCode}
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <form className="flex gap-4 items-end">
-                        <div className="flex-1">
-                            <Label htmlFor="amount">{t.amount} (QANZ)</Label>
-                            <Input id="amount" type="number" placeholder="100" min="1" />
-                        </div>
-                        <Button type="submit">
-                            <CreditCard className="h-4 w-4 mr-2" />
-                            {t.generate}
-                        </Button>
-                    </form>
-                </CardContent>
-            </Card>
+            <TopupForm locale={locale} />
 
             {/* Codes List */}
             <Card>
                 <CardHeader>
-                    <CardTitle>{locale === 'ar' ? 'جميع الأكواد' : 'All Codes'}</CardTitle>
+                    <CardTitle>{t.allCodes}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                     {!codes || codes.length === 0 ? (
@@ -122,8 +94,11 @@ export default async function AdminTopupPage({ params }: AdminTopupPageProps) {
                                 return (
                                     <div key={code.id} className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
                                         <div className="flex items-center gap-4">
-                                            <div className="rounded bg-muted px-3 py-1 font-mono text-sm">
-                                                {code.code}
+                                            <div className="flex items-center gap-2">
+                                                <div className="rounded bg-muted px-3 py-1 font-mono text-sm">
+                                                    {code.code}
+                                                </div>
+                                                <CopyCodeButton code={code.code} />
                                             </div>
                                             <div>
                                                 <p className="font-medium">{Number(code.amount).toFixed(2)} QANZ</p>
@@ -137,9 +112,7 @@ export default async function AdminTopupPage({ params }: AdminTopupPageProps) {
                                                 {code.status}
                                             </Badge>
                                             {code.status === 'active' && (
-                                                <Button variant="ghost" size="sm">
-                                                    {t.revokeCode}
-                                                </Button>
+                                                <RevokeButton codeId={code.id} locale={locale} />
                                             )}
                                         </div>
                                     </div>

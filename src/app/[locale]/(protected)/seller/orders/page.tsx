@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { OrderActions } from '@/components/seller/order-actions';
 
 interface SellerOrdersPageProps {
     params: Promise<{ locale: string }>;
@@ -25,14 +26,14 @@ export default async function SellerOrdersPage({ params }: SellerOrdersPageProps
     // Get orders with items from this seller
     const { data: orderItems } = await supabase
         .from('order_items')
-        .select('*, orders(*)')
+        .select('*, orders!inner(*), products(title_en, title_ar)')
         .eq('seller_id', seller?.id || '')
         .order('created_at', { ascending: false });
 
     // Group by order
     const ordersMap = new Map();
     orderItems?.forEach(item => {
-        const order = item.orders;
+        const order = item.orders as { id: string; created_at: string; status: string; total: number };
         if (order && !ordersMap.has(order.id)) {
             ordersMap.set(order.id, { ...order, items: [] });
         }
@@ -74,7 +75,7 @@ export default async function SellerOrdersPage({ params }: SellerOrdersPageProps
                 {orderList.map((order) => (
                     <Card key={order.id} className="hover:bg-muted/50 transition-colors">
                         <CardContent className="p-4">
-                            <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-start justify-between mb-3">
                                 <div>
                                     <p className="font-medium">
                                         {locale === 'ar' ? 'طلب' : 'Order'} #{order.id.slice(0, 8)}
@@ -87,9 +88,27 @@ export default async function SellerOrdersPage({ params }: SellerOrdersPageProps
                                     {order.status.replace(/_/g, ' ')}
                                 </Badge>
                             </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-muted-foreground">{t.total}</span>
-                                <span className="font-semibold">{Number(order.total).toFixed(2)} JOD</span>
+
+                            {/* Order items */}
+                            <div className="space-y-1 mb-3 text-sm">
+                                {order.items.slice(0, 3).map((item: { id: string; qty: number; products: { title_en?: string; title_ar?: string } }) => (
+                                    <div key={item.id} className="flex justify-between">
+                                        <span className="text-muted-foreground">
+                                            {item.qty}x {locale === 'ar' ? item.products?.title_ar : item.products?.title_en}
+                                        </span>
+                                    </div>
+                                ))}
+                                {order.items.length > 3 && (
+                                    <p className="text-muted-foreground">+{order.items.length - 3} more</p>
+                                )}
+                            </div>
+
+                            <div className="flex items-center justify-between border-t pt-3">
+                                <div className="text-sm">
+                                    <span className="text-muted-foreground">{t.total}: </span>
+                                    <span className="font-semibold">{Number(order.total).toFixed(2)} JOD</span>
+                                </div>
+                                <OrderActions orderId={order.id} status={order.status} locale={locale} />
                             </div>
                         </CardContent>
                     </Card>

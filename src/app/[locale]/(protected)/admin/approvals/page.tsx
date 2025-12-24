@@ -2,9 +2,9 @@ import { setRequestLocale } from 'next-intl/server';
 import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Store, Truck, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Store, Truck, Clock, CheckCircle } from 'lucide-react';
+import { ApprovalButtons } from '@/components/admin/approval-buttons';
 
 interface AdminApprovalsPageProps {
     params: Promise<{ locale: string }>;
@@ -19,14 +19,14 @@ export default async function AdminApprovalsPage({ params }: AdminApprovalsPageP
     // Get pending sellers
     const { data: pendingSellers } = await supabase
         .from('sellers')
-        .select('*, profiles(full_name, email:id)')
+        .select('*, profiles(full_name)')
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
     // Get pending drivers
     const { data: pendingDrivers } = await supabase
         .from('drivers')
-        .select('*, profiles(full_name, email:id)')
+        .select('*, profiles(full_name)')
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
@@ -38,8 +38,6 @@ export default async function AdminApprovalsPage({ params }: AdminApprovalsPageP
         businessName: locale === 'ar' ? 'اسم النشاط' : 'Business Name',
         address: locale === 'ar' ? 'العنوان' : 'Address',
         appliedOn: locale === 'ar' ? 'تاريخ التقديم' : 'Applied on',
-        approve: locale === 'ar' ? 'موافقة' : 'Approve',
-        reject: locale === 'ar' ? 'رفض' : 'Reject',
         pending: locale === 'ar' ? 'معلق' : 'Pending',
     };
 
@@ -64,15 +62,8 @@ export default async function AdminApprovalsPage({ params }: AdminApprovalsPageP
                         {t.pending}
                     </Badge>
                 </div>
-                <div className="flex gap-2 mt-4 pt-4 border-t">
-                    <Button size="sm" className="flex-1">
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        {t.approve}
-                    </Button>
-                    <Button size="sm" variant="destructive" className="flex-1">
-                        <XCircle className="h-4 w-4 mr-1" />
-                        {t.reject}
-                    </Button>
+                <div className="mt-4 pt-4 border-t">
+                    <ApprovalButtons id={seller.id} type="seller" locale={locale} />
                 </div>
             </CardContent>
         </Card>
@@ -100,15 +91,8 @@ export default async function AdminApprovalsPage({ params }: AdminApprovalsPageP
                         {t.pending}
                     </Badge>
                 </div>
-                <div className="flex gap-2 mt-4 pt-4 border-t">
-                    <Button size="sm" className="flex-1">
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        {t.approve}
-                    </Button>
-                    <Button size="sm" variant="destructive" className="flex-1">
-                        <XCircle className="h-4 w-4 mr-1" />
-                        {t.reject}
-                    </Button>
+                <div className="mt-4 pt-4 border-t">
+                    <ApprovalButtons id={driver.id} type="driver" locale={locale} />
                 </div>
             </CardContent>
         </Card>

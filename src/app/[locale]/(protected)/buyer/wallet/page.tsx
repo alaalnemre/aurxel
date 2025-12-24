@@ -1,9 +1,8 @@
 import { setRequestLocale } from 'next-intl/server';
 import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Wallet, ArrowUpRight, ArrowDownLeft, CreditCard } from 'lucide-react';
+import { Wallet, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { WalletRedeemForm } from '@/components/buyer/wallet-redeem';
 
 interface BuyerWalletPageProps {
     params: Promise<{ locale: string }>;
@@ -24,28 +23,22 @@ export default async function BuyerWalletPage({ params }: BuyerWalletPageProps) 
         .single();
 
     // Get recent transactions
-    const { data: transactions } = await supabase
+    const { data: transactions } = wallet ? await supabase
         .from('wallet_transactions')
         .select('*')
-        .eq('account_id', wallet?.id || '')
+        .eq('account_id', wallet.id)
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(10) : { data: null };
 
     const t = {
         title: locale === 'ar' ? 'المحفظة' : 'Wallet',
         balance: locale === 'ar' ? 'الرصيد الحالي' : 'Current Balance',
-        topUp: locale === 'ar' ? 'شحن الرصيد' : 'Top Up',
-        redeemCode: locale === 'ar' ? 'استخدام كود' : 'Redeem Code',
-        codePlaceholder: locale === 'ar' ? 'أدخل الكود هنا' : 'Enter code here',
-        redeem: locale === 'ar' ? 'تطبيق' : 'Apply',
         recentActivity: locale === 'ar' ? 'النشاط الأخير' : 'Recent Activity',
         noTransactions: locale === 'ar' ? 'لا توجد معاملات بعد' : 'No transactions yet',
-        transactionTypes: {
-            topup: locale === 'ar' ? 'شحن' : 'Top up',
-            purchase: locale === 'ar' ? 'شراء' : 'Purchase',
-            refund: locale === 'ar' ? 'استرداد' : 'Refund',
-        },
+        noWallet: locale === 'ar' ? 'لم يتم إنشاء المحفظة بعد' : 'Wallet not created yet',
     };
+
+    const creditTypes = ['topup', 'refund', 'sale_credit', 'delivery_fee'];
 
     return (
         <div className="space-y-6">
@@ -58,7 +51,7 @@ export default async function BuyerWalletPage({ params }: BuyerWalletPageProps) 
                         <div>
                             <p className="text-sm opacity-90">{t.balance}</p>
                             <p className="text-4xl font-bold mt-1">
-                                {wallet?.balance?.toFixed(2) || '0.00'}
+                                {wallet?.balance ? Number(wallet.balance).toFixed(2) : '0.00'}
                                 <span className="text-lg font-normal ml-2">QANZ</span>
                             </p>
                         </div>
@@ -68,20 +61,7 @@ export default async function BuyerWalletPage({ params }: BuyerWalletPageProps) 
             </Card>
 
             {/* Top Up Section */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <CreditCard className="h-5 w-5" />
-                        {t.redeemCode}
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <form className="flex gap-2">
-                        <Input placeholder={t.codePlaceholder} className="flex-1" />
-                        <Button type="submit">{t.redeem}</Button>
-                    </form>
-                </CardContent>
-            </Card>
+            <WalletRedeemForm locale={locale} />
 
             {/* Recent Transactions */}
             <Card>
@@ -89,12 +69,14 @@ export default async function BuyerWalletPage({ params }: BuyerWalletPageProps) 
                     <CardTitle>{t.recentActivity}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    {!transactions || transactions.length === 0 ? (
+                    {!wallet ? (
+                        <p className="text-center text-muted-foreground py-8">{t.noWallet}</p>
+                    ) : !transactions || transactions.length === 0 ? (
                         <p className="text-center text-muted-foreground py-8">{t.noTransactions}</p>
                     ) : (
                         <div className="space-y-4">
                             {transactions.map((tx) => {
-                                const isCredit = ['topup', 'refund', 'sale_credit', 'delivery_fee'].includes(tx.type);
+                                const isCredit = creditTypes.includes(tx.type);
                                 return (
                                     <div key={tx.id} className="flex items-center justify-between py-2 border-b last:border-0">
                                         <div className="flex items-center gap-3">

@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Truck, MapPin, DollarSign } from 'lucide-react';
+import { DeliveryActions } from '@/components/driver/delivery-actions';
 
 interface DriverDeliveriesPageProps {
     params: Promise<{ locale: string }>;
@@ -26,14 +27,14 @@ export default async function DriverDeliveriesPage({ params }: DriverDeliveriesP
     // Get available deliveries
     const { data: availableDeliveries } = await supabase
         .from('deliveries')
-        .select('*, orders(*)')
+        .select('*')
         .eq('status', 'available')
         .order('created_at', { ascending: false });
 
     // Get my deliveries
     const { data: myDeliveries } = await supabase
         .from('deliveries')
-        .select('*, orders(*)')
+        .select('*')
         .eq('driver_id', driver?.id || '')
         .order('created_at', { ascending: false });
 
@@ -49,53 +50,46 @@ export default async function DriverDeliveriesPage({ params }: DriverDeliveriesP
         pickup: locale === 'ar' ? 'الاستلام' : 'Pickup',
         dropoff: locale === 'ar' ? 'التوصيل' : 'Dropoff',
         cod: locale === 'ar' ? 'الدفع عند الاستلام' : 'COD Amount',
-        accept: locale === 'ar' ? 'قبول' : 'Accept',
     };
 
-    const renderDelivery = (delivery: NonNullable<typeof availableDeliveries>[0], showAccept = false) => {
-        return (
-            <Card key={delivery.id} className="hover:bg-muted/50 transition-colors">
-                <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                            <Truck className="h-4 w-4" />
-                            <span className="font-medium">
-                                {locale === 'ar' ? 'توصيل' : 'Delivery'} #{delivery.id.slice(0, 8)}
-                            </span>
-                        </div>
-                        <Badge>{delivery.status.replace(/_/g, ' ')}</Badge>
+    const renderDelivery = (delivery: NonNullable<typeof availableDeliveries>[0]) => (
+        <Card key={delivery.id} className="hover:bg-muted/50 transition-colors">
+            <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                        <Truck className="h-4 w-4" />
+                        <span className="font-medium">
+                            {locale === 'ar' ? 'توصيل' : 'Delivery'} #{delivery.id.slice(0, 8)}
+                        </span>
                     </div>
-                    <div className="grid gap-2 text-sm">
-                        <div className="flex items-start gap-2">
-                            <MapPin className="h-4 w-4 text-green-500 mt-0.5" />
-                            <div>
-                                <p className="text-muted-foreground text-xs">{t.pickup}</p>
-                                <p>{delivery.pickup_address}</p>
-                            </div>
-                        </div>
-                        <div className="flex items-start gap-2">
-                            <MapPin className="h-4 w-4 text-red-500 mt-0.5" />
-                            <div>
-                                <p className="text-muted-foreground text-xs">{t.dropoff}</p>
-                                <p>{delivery.dropoff_address}</p>
-                            </div>
+                    <Badge>{delivery.status.replace(/_/g, ' ')}</Badge>
+                </div>
+                <div className="grid gap-2 text-sm">
+                    <div className="flex items-start gap-2">
+                        <MapPin className="h-4 w-4 text-green-500 mt-0.5" />
+                        <div>
+                            <p className="text-muted-foreground text-xs">{t.pickup}</p>
+                            <p>{delivery.pickup_address}</p>
                         </div>
                     </div>
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t">
-                        <div className="flex items-center gap-1 text-sm">
-                            <DollarSign className="h-4 w-4" />
-                            <span>{t.cod}: <strong>{Number(delivery.cod_amount).toFixed(2)} JOD</strong></span>
+                    <div className="flex items-start gap-2">
+                        <MapPin className="h-4 w-4 text-red-500 mt-0.5" />
+                        <div>
+                            <p className="text-muted-foreground text-xs">{t.dropoff}</p>
+                            <p>{delivery.dropoff_address}</p>
                         </div>
-                        {showAccept && (
-                            <button className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90">
-                                {t.accept}
-                            </button>
-                        )}
                     </div>
-                </CardContent>
-            </Card>
-        );
-    };
+                </div>
+                <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                    <div className="flex items-center gap-1 text-sm">
+                        <DollarSign className="h-4 w-4" />
+                        <span>{t.cod}: <strong>{Number(delivery.cod_amount).toFixed(2)} JOD</strong></span>
+                    </div>
+                    <DeliveryActions deliveryId={delivery.id} status={delivery.status} locale={locale} />
+                </div>
+            </CardContent>
+        </Card>
+    );
 
     const renderEmpty = () => (
         <Card>
@@ -134,17 +128,17 @@ export default async function DriverDeliveriesPage({ params }: DriverDeliveriesP
                 <TabsContent value="available" className="mt-4 space-y-4">
                     {!availableDeliveries || availableDeliveries.length === 0
                         ? renderEmpty()
-                        : availableDeliveries.map(d => renderDelivery(d, true))}
+                        : availableDeliveries.map(renderDelivery)}
                 </TabsContent>
                 <TabsContent value="active" className="mt-4 space-y-4">
                     {activeDeliveries.length === 0
                         ? renderEmpty()
-                        : activeDeliveries.map(d => renderDelivery(d))}
+                        : activeDeliveries.map(renderDelivery)}
                 </TabsContent>
                 <TabsContent value="completed" className="mt-4 space-y-4">
                     {completedDeliveries.length === 0
                         ? renderEmpty()
-                        : completedDeliveries.map(d => renderDelivery(d))}
+                        : completedDeliveries.map(renderDelivery)}
                 </TabsContent>
             </Tabs>
         </div>

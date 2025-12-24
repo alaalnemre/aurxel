@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Package, Plus, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
+import { ProductActions } from '@/components/seller/product-actions';
 
 interface SellerProductsPageProps {
     params: Promise<{ locale: string }>;
@@ -43,6 +44,7 @@ export default async function SellerProductsPage({ params }: SellerProductsPageP
         lowStock: locale === 'ar' ? 'مخزون منخفض' : 'Low Stock',
         outOfStock: locale === 'ar' ? 'نفذ المخزون' : 'Out of Stock',
         stock: locale === 'ar' ? 'المخزون' : 'Stock',
+        total: locale === 'ar' ? 'الإجمالي' : 'Total',
     };
 
     // Stats
@@ -67,7 +69,7 @@ export default async function SellerProductsPage({ params }: SellerProductsPageP
             <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                     <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">{locale === 'ar' ? 'الإجمالي' : 'Total'}</CardTitle>
+                        <CardTitle className="text-sm font-medium">{t.total}</CardTitle>
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{totalProducts}</div>
@@ -133,7 +135,7 @@ export default async function SellerProductsPage({ params }: SellerProductsPageP
                                             </p>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-3">
                                         {product.stock === 0 && (
                                             <Badge variant="destructive">{t.outOfStock}</Badge>
                                         )}
@@ -146,6 +148,7 @@ export default async function SellerProductsPage({ params }: SellerProductsPageP
                                         <Badge variant={product.is_active ? 'default' : 'secondary'}>
                                             {product.is_active ? t.active : t.inactive}
                                         </Badge>
+                                        <ProductActions productId={product.id} isActive={product.is_active} locale={locale} />
                                     </div>
                                 </div>
                             ))}
