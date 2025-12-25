@@ -16,12 +16,12 @@ export default async function BuyerDashboard({ params }: BuyerDashboardProps) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Get profile
+    // Get profile (maybeSingle to handle edge cases)
     const { data: profile } = await supabase
         .from('profiles')
         .select('full_name')
         .eq('id', user!.id)
-        .single();
+        .maybeSingle();
 
     // Get recent orders count
     const { count: ordersCount } = await supabase
@@ -29,12 +29,12 @@ export default async function BuyerDashboard({ params }: BuyerDashboardProps) {
         .select('*', { count: 'exact', head: true })
         .eq('buyer_id', user!.id);
 
-    // Get wallet balance
+    // Get wallet balance (maybeSingle to handle new users without wallet yet)
     const { data: wallet } = await supabase
         .from('wallet_accounts')
         .select('balance')
         .eq('owner_id', user!.id)
-        .single();
+        .maybeSingle();
 
     const greeting = locale === 'ar'
         ? `مرحباً، ${profile?.full_name || 'متسوق'}!`

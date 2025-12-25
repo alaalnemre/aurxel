@@ -22,7 +22,7 @@ export default async function BuyerLayout({ children, params }: BuyerLayoutProps
         .from('profiles')
         .select('full_name, role')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
     // Get notification count
     const { count: notificationCount } = await supabase

@@ -15,12 +15,12 @@ export default async function BuyerWalletPage({ params }: BuyerWalletPageProps) 
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Get wallet
+    // Get wallet (maybeSingle to handle new users without wallet yet)
     const { data: wallet } = await supabase
         .from('wallet_accounts')
         .select('id, balance')
         .eq('owner_id', user!.id)
-        .single();
+        .maybeSingle();
 
     // Get recent transactions
     const { data: transactions } = wallet ? await supabase
