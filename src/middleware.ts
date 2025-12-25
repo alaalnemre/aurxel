@@ -1,88 +1,84 @@
-import createIntlMiddleware from 'next-intl/middleware';
-import { NextResponse, type NextRequest } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
+import createMiddleware from 'next-intl/middleware';
+import { type NextRequest, NextResponse } from 'next/server';
+import { updateSession } from '@/lib/supabase/middleware';
 import { routing } from '@/i18n/routing';
 
-// Create the intl middleware
-const intlMiddleware = createIntlMiddleware(routing);
+// Protected route patterns (without locale prefix)
+const protectedPaths = ['/buyer', '/seller', '/driver', '/admin'];
 
-// Routes that require authentication check
-const protectedRoutes = ['/buyer', '/seller', '/driver', '/admin'];
-
-// Routes that are only for non-authenticated users
-const authRoutes = ['/login', '/register'];
+// Create the next-intl middleware
+const intlMiddleware = createMiddleware(routing);
 
 export async function middleware(request: NextRequest) {
-    const pathname = request.nextUrl.pathname;
+    const { pathname } = request.nextUrl;
 
     // Skip middleware for static files and API routes
     if (
+        pathname.includes('.') ||
         pathname.startsWith('/_next') ||
-        pathname.startsWith('/api') ||
-        pathname.includes('.')
+        pathname.startsWith('/api')
     ) {
         return NextResponse.next();
     }
 
-    // Extract locale from path for routing decisions
-    const pathLocale = pathname.split('/')[1];
-    const locale = routing.locales.includes(pathLocale as 'en' | 'ar')
-        ? pathLocale
+    // First, handle the intl routing
+    const intlResponse = intlMiddleware(request);
+
+    // Extract locale from path
+    const pathParts = pathname.split('/');
+    const locale = routing.locales.includes(pathParts[1] as 'en' | 'ar')
+        ? pathParts[1]
         : routing.defaultLocale;
 
-    // Check if path is protected (after removing locale prefix)
-    const pathWithoutLocale = pathname.replace(`/${locale}`, '') || '/';
-    const isProtectedRoute = protectedRoutes.some(route =>
-        pathWithoutLocale.startsWith(route)
-    );
-    const isAuthRoute = authRoutes.some(route =>
-        pathWithoutLocale.startsWith(route)
+    // Check if this is a protected route
+    const pathWithoutLocale = '/' + pathParts.slice(2).join('/');
+    const isProtectedRoute = protectedPaths.some(
+        (path) =>
+            pathWithoutLocale === path || pathWithoutLocale.startsWith(path + '/')
     );
 
-    // Only check auth for protected or auth routes to minimize overhead
-    if (isProtectedRoute || isAuthRoute) {
-        // Create Supabase client just for auth check - lightweight
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    getAll() {
-                        return request.cookies.getAll();
-                    },
-                    setAll() {
-                        // Intentionally empty - don't modify response here
-                        // Session refresh happens in server components
-                    },
-                },
-            }
-        );
+    if (isProtectedRoute) {
+        // Update session and check auth
+        const { user, supabaseResponse } = await updateSession(request);
 
-        const { data: { user } } = await supabase.auth.getUser();
-
-        // Redirect to login if accessing protected route without auth
-        if (isProtectedRoute && !user) {
+        if (!user) {
+            // Redirect to login with the current path as redirect
             const loginUrl = new URL(`/${locale}/login`, request.url);
             loginUrl.searchParams.set('redirect', pathname);
             return NextResponse.redirect(loginUrl);
         }
 
-        // Redirect to dashboard if accessing auth routes while logged in
-        if (isAuthRoute && user) {
-            return NextResponse.redirect(new URL(`/${locale}/buyer`, request.url));
-        }
+        // User is authenticated, merge cookies from supabase response
+        const response = intlResponse || NextResponse.next({ request });
+        supabaseResponse.cookies.getAll().forEach((cookie) => {
+            response.cookies.set(cookie.name, cookie.value);
+        });
+
+        return response;
     }
 
-    // Run intlMiddleware for locale handling - SINGLE response
-    return intlMiddleware(request);
+    // For non-protected routes, just update session to keep it fresh
+    // but don't require authentication
+    const { supabaseResponse } = await updateSession(request);
+
+    // Merge cookies
+    const response = intlResponse || NextResponse.next({ request });
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+        response.cookies.set(cookie.name, cookie.value);
+    });
+
+    return response;
 }
 
 export const config = {
     matcher: [
-        // Match all pathnames except for
-        // - API routes
-        // - _next (Next.js internals)
-        // - Static files
-        '/((?!api|_next|_vercel|.*\\..*).*)',
+        /*
+         * Match all request paths except for the ones starting with:
+         * - _next/static (static files)
+         * - _next/image (image optimization files)
+         * - favicon.ico (favicon file)
+         * - public files (public folder)
+         */
+        '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     ],
 };

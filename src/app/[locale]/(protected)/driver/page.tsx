@@ -1,224 +1,197 @@
+import { useTranslations } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
 import { createClient } from '@/lib/supabase/server';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Truck, DollarSign, Clock, CheckCircle } from 'lucide-react';
-import Link from 'next/link';
+import { Link } from '@/i18n/navigation';
+import { LogoutButton } from '@/components/LogoutButton';
+import { getQanzBalance } from '@/lib/qanz/actions';
+import { getUnreadCount } from '@/lib/notifications/actions';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 
-interface DriverDashboardProps {
-    params: Promise<{ locale: string }>;
-}
-
-// Force dynamic rendering and Node.js runtime - required for auth cookies
-export const dynamic = 'force-dynamic';
+// Force Node.js runtime
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-export default async function DriverDashboard({ params }: DriverDashboardProps) {
+export default async function DriverDashboard({
+    params,
+}: {
+    params: Promise<{ locale: string }>;
+}) {
     const { locale } = await params;
     setRequestLocale(locale);
 
-    let profileName = '';
-    let availableCount: number | null = 0;
-    let assignedCount: number | null = 0;
-    let completedCount: number | null = 0;
-    let walletBalance = 0;
+    const supabase = await createClient();
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
 
-    try {
-        const supabase = await createClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const [balance, unreadCount] = await Promise.all([
+        getQanzBalance(),
+        getUnreadCount(),
+    ]);
 
-        if (authError) {
-            console.error('[DriverDashboard] Auth error:', authError.message);
-        }
+    return <DriverDashboardContent user={user} balance={balance} unreadCount={unreadCount} />;
+}
 
-        if (!user) {
-            console.error('[DriverDashboard] No user found');
-            return <div className="p-6">Loading...</div>;
-        }
-
-        const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .eq('id', user.id)
-            .maybeSingle();
-
-        if (profileError) {
-            console.error('[DriverDashboard] Profile fetch error:', profileError.message);
-        }
-        profileName = profile?.full_name || '';
-
-        // Get driver info
-        const { data: driver, error: driverError } = await supabase
-            .from('drivers')
-            .select('id')
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-        if (driverError) {
-            console.error('[DriverDashboard] Driver fetch error:', driverError.message);
-        }
-
-        // Get available deliveries count
-        const { count: availCount, error: availError } = await supabase
-            .from('deliveries')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'available');
-
-        if (availError) {
-            console.error('[DriverDashboard] Available count error:', availError.message);
-        }
-        availableCount = availCount;
-
-        // Get assigned deliveries count
-        const { count: assignCount, error: assignError } = await supabase
-            .from('deliveries')
-            .select('*', { count: 'exact', head: true })
-            .eq('driver_id', driver?.id)
-            .in('status', ['assigned', 'picked_up']);
-
-        if (assignError) {
-            console.error('[DriverDashboard] Assigned count error:', assignError.message);
-        }
-        assignedCount = assignCount;
-
-        // Get completed deliveries count
-        const { count: compCount, error: compError } = await supabase
-            .from('deliveries')
-            .select('*', { count: 'exact', head: true })
-            .eq('driver_id', driver?.id)
-            .eq('status', 'delivered');
-
-        if (compError) {
-            console.error('[DriverDashboard] Completed count error:', compError.message);
-        }
-        completedCount = compCount;
-
-        // Get wallet balance
-        const { data: wallet, error: walletError } = await supabase
-            .from('wallet_accounts')
-            .select('balance')
-            .eq('owner_id', user.id)
-            .maybeSingle();
-
-        if (walletError) {
-            console.error('[DriverDashboard] Wallet fetch error:', walletError.message);
-        }
-        walletBalance = wallet?.balance ? Number(wallet.balance) : 0;
-
-    } catch (error) {
-        console.error('[DriverDashboard] Unhandled error:', error);
-        return (
-            <div className="space-y-6">
-                <div>
-                    <h1 className="text-2xl font-bold">
-                        {locale === 'ar' ? 'لوحة تحكم السائق' : 'Driver Dashboard'}
-                    </h1>
-                    <p className="text-muted-foreground">
-                        {locale === 'ar' ? 'جاري تحميل البيانات...' : 'Loading your data...'}
-                    </p>
-                </div>
-            </div>
-        );
-    }
+function DriverDashboardContent({ user, balance, unreadCount }: { user: { email?: string } | null; balance: number; unreadCount: number }) {
+    const t = useTranslations();
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-2xl font-bold">
-                    {locale === 'ar'
-                        ? `مرحباً، ${profileName || 'سائق'}!`
-                        : `Welcome, ${profileName || 'Driver'}!`}
-                </h1>
-                <p className="text-muted-foreground">
-                    {locale === 'ar' ? 'إليك نظرة عامة على نشاطك' : "Here's your activity overview"}
-                </p>
-            </div>
-
-            {/* KPI Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
-                <Card className={availableCount && availableCount > 0 ? 'border-green-500' : ''}>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium">
-                            {locale === 'ar' ? 'توصيلات متاحة' : 'Available'}
-                        </CardTitle>
-                        <Truck className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{availableCount || 0}</div>
-                        <Link href={`/${locale}/driver/deliveries?tab=available`} className="text-xs text-primary hover:underline">
-                            {locale === 'ar' ? 'عرض المتاح' : 'View available'}
-                        </Link>
-                    </CardContent>
-                </Card>
-
-                <Card className={assignedCount && assignedCount > 0 ? 'border-yellow-500' : ''}>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium">
-                            {locale === 'ar' ? 'قيد التوصيل' : 'In Progress'}
-                        </CardTitle>
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{assignedCount || 0}</div>
-                        <p className="text-xs text-muted-foreground">
-                            {locale === 'ar' ? 'توصيلات نشطة' : 'active deliveries'}
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium">
-                            {locale === 'ar' ? 'مكتملة' : 'Completed'}
-                        </CardTitle>
-                        <CheckCircle className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{completedCount || 0}</div>
-                        <p className="text-xs text-muted-foreground">
-                            {locale === 'ar' ? 'إجمالي التوصيلات' : 'total deliveries'}
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium">
-                            {locale === 'ar' ? 'رصيد المحفظة' : 'Wallet Balance'}
-                        </CardTitle>
-                        <DollarSign className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{walletBalance.toFixed(2)} JOD</div>
-                        <p className="text-xs text-muted-foreground">
-                            {locale === 'ar' ? 'من التوصيلات' : 'from deliveries'}
-                        </p>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Quick Action */}
-            {(availableCount || 0) > 0 && (
-                <Card className="bg-primary text-primary-foreground">
-                    <CardContent className="flex items-center justify-between py-6">
-                        <div>
-                            <h3 className="text-lg font-semibold">
-                                {locale === 'ar' ? 'توصيلات جديدة متاحة!' : 'New deliveries available!'}
-                            </h3>
-                            <p className="text-sm opacity-90">
-                                {locale === 'ar'
-                                    ? `${availableCount} توصيلة في انتظارك`
-                                    : `${availableCount} deliveries waiting for you`}
-                            </p>
+        <div className="min-h-screen bg-gray-50">
+            {/* Header */}
+            <header className="bg-white shadow-sm border-b border-gray-200">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex items-center justify-between h-16">
+                        <div className="flex items-center">
+                            <Link href="/" className="text-xl font-bold text-indigo-600">
+                                {t('common.appName')}
+                            </Link>
+                            <span className="ml-4 px-3 py-1 text-xs font-medium bg-orange-100 text-orange-600 rounded-full">
+                                Driver
+                            </span>
                         </div>
-                        <Link href={`/${locale}/driver/deliveries?tab=available`}>
-                            <Button variant="secondary">
-                                {locale === 'ar' ? 'عرض التوصيلات' : 'View Deliveries'}
-                            </Button>
-                        </Link>
-                    </CardContent>
-                </Card>
-            )}
+                        <div className="flex items-center gap-4">
+                            <NotificationBell initialCount={unreadCount} />
+                            <Link
+                                href="/wallet"
+                                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100"
+                            >
+                                💳 {balance.toFixed(0)} QANZ
+                            </Link>
+                            <span className="text-sm text-gray-600">{user?.email}</span>
+                            <LogoutButton />
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            {/* Main Content */}
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div className="mb-8 flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900">
+                            {t('dashboard.driver.title')}
+                        </h1>
+                        <p className="mt-2 text-gray-600">{t('dashboard.driver.welcome')}</p>
+                    </div>
+                    {/* Status Toggle */}
+                    <div className="flex items-center gap-3 bg-white rounded-lg px-4 py-2 shadow-sm border border-gray-200">
+                        <span className="text-sm text-gray-600">
+                            {t('dashboard.driver.status')}:
+                        </span>
+                        <button className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-full font-medium text-sm">
+                            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                            {t('dashboard.driver.online')}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Dashboard Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* Active Deliveries Card */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-semibold text-gray-900">
+                                {t('dashboard.driver.activeDeliveries')}
+                            </h2>
+                            <svg
+                                className="w-6 h-6 text-orange-500"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                                />
+                            </svg>
+                        </div>
+                        <p className="text-3xl font-bold text-gray-900">0</p>
+                        <p className="text-gray-500 text-sm mt-1">
+                            {t('dashboard.driver.noDeliveries')}
+                        </p>
+                    </div>
+
+                    {/* Completed Deliveries Card */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-semibold text-gray-900">
+                                {t('dashboard.driver.completedDeliveries')}
+                            </h2>
+                            <svg
+                                className="w-6 h-6 text-green-500"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                            </svg>
+                        </div>
+                        <p className="text-3xl font-bold text-gray-900">0</p>
+                        <p className="text-gray-500 text-sm mt-1">today</p>
+                    </div>
+
+                    {/* Earnings Card */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-semibold text-gray-900">
+                                {t('dashboard.driver.earnings')}
+                            </h2>
+                            <svg
+                                className="w-6 h-6 text-indigo-500"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                            </svg>
+                        </div>
+                        <p className="text-3xl font-bold text-gray-900">
+                            0 <span className="text-lg font-normal text-gray-500">JOD</span>
+                        </p>
+                        <p className="text-gray-500 text-sm mt-1">this week</p>
+                    </div>
+                </div>
+
+                {/* Available Deliveries Section */}
+                <div className="mt-8">
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                        Available Deliveries
+                    </h2>
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+                        <svg
+                            className="w-16 h-16 text-gray-300 mx-auto mb-4"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                            />
+                        </svg>
+                        <p className="text-gray-500">
+                            No deliveries available at the moment
+                        </p>
+                        <p className="text-gray-400 text-sm mt-1">
+                            New deliveries will appear here when sellers mark orders as ready
+                        </p>
+                    </div>
+                </div>
+            </main>
         </div>
     );
 }

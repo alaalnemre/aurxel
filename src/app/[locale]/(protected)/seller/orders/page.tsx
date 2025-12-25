@@ -1,191 +1,144 @@
+import { useTranslations } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
-import { createClient } from '@/lib/supabase/server';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { OrderActions } from '@/components/seller/order-actions';
+import { Link } from '@/i18n/navigation';
+import { getSellerOrders } from '@/lib/orders/actions';
 
-interface SellerOrdersPageProps {
+// Force Node.js runtime
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+export default async function SellerOrdersPage({
+    params,
+}: {
     params: Promise<{ locale: string }>;
-}
-
-export default async function SellerOrdersPage({ params }: SellerOrdersPageProps) {
+}) {
     const { locale } = await params;
     setRequestLocale(locale);
 
-    type OrderItemType = {
-        id: string;
-        order_id: string;
-        qty: number;
-        orders: { id: string; created_at: string; status: string; total: number };
-        products: { title_en?: string; title_ar?: string };
+    const orders = await getSellerOrders();
+
+    return <SellerOrdersContent orders={orders} locale={locale} />;
+}
+
+function SellerOrdersContent({
+    orders,
+    locale,
+}: {
+    orders: Awaited<ReturnType<typeof getSellerOrders>>;
+    locale: string;
+}) {
+    const t = useTranslations();
+
+    const statusColors: Record<string, string> = {
+        placed: 'bg-blue-100 text-blue-700',
+        accepted: 'bg-indigo-100 text-indigo-700',
+        preparing: 'bg-yellow-100 text-yellow-700',
+        ready_for_pickup: 'bg-purple-100 text-purple-700',
+        assigned: 'bg-cyan-100 text-cyan-700',
+        picked_up: 'bg-orange-100 text-orange-700',
+        delivered: 'bg-green-100 text-green-700',
+        cancelled: 'bg-red-100 text-red-700',
     };
 
-    let seller: { id: string } | null = null;
-    let orderItems: OrderItemType[] | null = null;
-
-    try {
-        const supabase = await createClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError) {
-            console.error('[SellerOrders] Auth error:', authError.message);
-        }
-
-        if (!user) {
-            console.error('[SellerOrders] No user found');
-            return <div className="p-6">Loading...</div>;
-        }
-
-        // Get seller
-        const { data: sellerData, error: sellerError } = await supabase
-            .from('sellers')
-            .select('id')
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-        if (sellerError) {
-            console.error('[SellerOrders] Seller fetch error:', sellerError.message);
-        }
-        seller = sellerData;
-
-        // Get orders with items from this seller
-        const { data: itemsData, error: ordersError } = await supabase
-            .from('order_items')
-            .select('*, orders!inner(*), products(title_en, title_ar)')
-            .eq('seller_id', seller?.id || '')
-            .order('created_at', { ascending: false });
-
-        if (ordersError) {
-            console.error('[SellerOrders] Orders fetch error:', ordersError.message);
-        }
-        orderItems = itemsData as OrderItemType[] | null;
-
-    } catch (error) {
-        console.error('[SellerOrders] Unhandled error:', error);
-        return <div className="p-6">Loading orders...</div>;
-    }
-
-    // Group by order
-    const ordersMap = new Map();
-    const itemsToProcess = orderItems || [];
-    itemsToProcess.forEach((item: OrderItemType) => {
-        const order = item.orders as { id: string; created_at: string; status: string; total: number };
-        if (order && !ordersMap.has(order.id)) {
-            ordersMap.set(order.id, { ...order, items: [] });
-        }
-        if (order) {
-            ordersMap.get(order.id).items.push(item);
-        }
-    });
-    const orders = Array.from(ordersMap.values());
-
-    const newOrders = orders.filter(o => o.status === 'pending_seller');
-    const preparingOrders = orders.filter(o => o.status === 'preparing');
-    const readyOrders = orders.filter(o => o.status === 'ready_for_pickup');
-    const completedOrders = orders.filter(o => o.status === 'completed');
-
-    const t = {
-        title: locale === 'ar' ? 'الطلبات' : 'Orders',
-        new: locale === 'ar' ? 'جديدة' : 'New',
-        preparing: locale === 'ar' ? 'قيد التحضير' : 'Preparing',
-        ready: locale === 'ar' ? 'جاهزة' : 'Ready',
-        completed: locale === 'ar' ? 'مكتملة' : 'Completed',
-        noOrders: locale === 'ar' ? 'لا توجد طلبات' : 'No orders',
-        items: locale === 'ar' ? 'عناصر' : 'items',
-        total: locale === 'ar' ? 'الإجمالي' : 'Total',
-    };
-
-    const renderOrders = (orderList: typeof orders) => {
-        if (orderList.length === 0) {
-            return (
-                <Card>
-                    <CardContent className="py-8 text-center text-muted-foreground">
-                        {t.noOrders}
-                    </CardContent>
-                </Card>
-            );
-        }
-
-        return (
-            <div className="space-y-4">
-                {orderList.map((order) => (
-                    <Card key={order.id} className="hover:bg-muted/50 transition-colors">
-                        <CardContent className="p-4">
-                            <div className="flex items-start justify-between mb-3">
-                                <div>
-                                    <p className="font-medium">
-                                        {locale === 'ar' ? 'طلب' : 'Order'} #{order.id.slice(0, 8)}
-                                    </p>
-                                    <p className="text-sm text-muted-foreground">
-                                        {new Date(order.created_at).toLocaleDateString(locale)} • {order.items.length} {t.items}
-                                    </p>
-                                </div>
-                                <Badge variant={order.status === 'pending_seller' ? 'destructive' : 'default'}>
-                                    {order.status.replace(/_/g, ' ')}
-                                </Badge>
-                            </div>
-
-                            {/* Order items */}
-                            <div className="space-y-1 mb-3 text-sm">
-                                {order.items.slice(0, 3).map((item: { id: string; qty: number; products: { title_en?: string; title_ar?: string } }) => (
-                                    <div key={item.id} className="flex justify-between">
-                                        <span className="text-muted-foreground">
-                                            {item.qty}x {locale === 'ar' ? item.products?.title_ar : item.products?.title_en}
-                                        </span>
-                                    </div>
-                                ))}
-                                {order.items.length > 3 && (
-                                    <p className="text-muted-foreground">+{order.items.length - 3} more</p>
-                                )}
-                            </div>
-
-                            <div className="flex items-center justify-between border-t pt-3">
-                                <div className="text-sm">
-                                    <span className="text-muted-foreground">{t.total}: </span>
-                                    <span className="font-semibold">{Number(order.total).toFixed(2)} JOD</span>
-                                </div>
-                                <OrderActions orderId={order.id} status={order.status} locale={locale} />
-                            </div>
-                        </CardContent>
-                    </Card>
-                ))}
-            </div>
-        );
-    };
+    const newOrders = orders.filter((o) => o.status === 'placed');
+    const activeOrders = orders.filter((o) =>
+        ['accepted', 'preparing', 'ready_for_pickup'].includes(o.status)
+    );
+    const completedOrders = orders.filter((o) =>
+        ['delivered', 'cancelled'].includes(o.status)
+    );
 
     return (
         <div className="space-y-6">
-            <h1 className="text-2xl font-bold">{t.title}</h1>
+            <div>
+                <h1 className="text-2xl font-bold text-gray-900">{t('orders.sellerOrders')}</h1>
+                <p className="mt-1 text-sm text-gray-500">{t('orders.manageOrders')}</p>
+            </div>
 
-            <Tabs defaultValue="new" className="w-full">
-                <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="new" className="relative">
-                        {t.new}
-                        {newOrders.length > 0 && (
-                            <Badge variant="destructive" className="ml-2 h-5 w-5 p-0 justify-center">
-                                {newOrders.length}
-                            </Badge>
-                        )}
-                    </TabsTrigger>
-                    <TabsTrigger value="preparing">{t.preparing}</TabsTrigger>
-                    <TabsTrigger value="ready">{t.ready}</TabsTrigger>
-                    <TabsTrigger value="completed">{t.completed}</TabsTrigger>
-                </TabsList>
+            {/* Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                    <div className="text-sm text-gray-500">{t('orders.newOrders')}</div>
+                    <div className="text-2xl font-bold text-blue-600">{newOrders.length}</div>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                    <div className="text-sm text-gray-500">{t('orders.inProgress')}</div>
+                    <div className="text-2xl font-bold text-yellow-600">{activeOrders.length}</div>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                    <div className="text-sm text-gray-500">{t('orders.completed')}</div>
+                    <div className="text-2xl font-bold text-green-600">{completedOrders.length}</div>
+                </div>
+            </div>
 
-                <TabsContent value="new" className="mt-4">
-                    {renderOrders(newOrders)}
-                </TabsContent>
-                <TabsContent value="preparing" className="mt-4">
-                    {renderOrders(preparingOrders)}
-                </TabsContent>
-                <TabsContent value="ready" className="mt-4">
-                    {renderOrders(readyOrders)}
-                </TabsContent>
-                <TabsContent value="completed" className="mt-4">
-                    {renderOrders(completedOrders)}
-                </TabsContent>
-            </Tabs>
+            {orders.length === 0 ? (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        </svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('orders.noSellerOrders')}</h3>
+                    <p className="text-gray-500">{t('orders.waitingForOrders')}</p>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {/* New Orders Alert */}
+                    {newOrders.length > 0 && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <p className="text-blue-800 font-medium">
+                                🔔 {t('orders.youHaveNewOrders', { count: newOrders.length })}
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Orders List */}
+                    {orders.map((order) => (
+                        <Link
+                            key={order.id}
+                            href={`/seller/orders/${order.id}`}
+                            className={`block bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition-shadow ${order.status === 'placed' ? 'border-blue-300 bg-blue-50/50' : 'border-gray-200'
+                                }`}
+                        >
+                            <div className="flex items-center justify-between mb-4">
+                                <div>
+                                    <p className="text-sm text-gray-500">
+                                        {t('orders.orderId')}: #{order.id.slice(0, 8).toUpperCase()}
+                                    </p>
+                                    <p className="text-xs text-gray-400">
+                                        {new Date(order.created_at).toLocaleString(locale)}
+                                    </p>
+                                </div>
+                                <span className={`px-3 py-1 text-xs font-medium rounded-full ${statusColors[order.status]}`}>
+                                    {t(`orders.status.${order.status}`)}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-gray-600">
+                                        {order.items?.length || 0} {t('orders.items')}
+                                    </p>
+                                    <p className="text-sm text-gray-500">
+                                        {t('orders.buyerName')}: {(order.buyer as { full_name?: string } | null)?.full_name || 'Buyer'}
+                                    </p>
+                                </div>
+                                <p className="text-lg font-bold text-indigo-600">
+                                    {order.total_amount.toFixed(2)} JOD
+                                </p>
+                            </div>
+
+                            {order.status === 'placed' && (
+                                <div className="mt-4 pt-4 border-t border-gray-200">
+                                    <span className="text-sm text-blue-600 font-medium">
+                                        {t('orders.clickToAccept')} →
+                                    </span>
+                                </div>
+                            )}
+                        </Link>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

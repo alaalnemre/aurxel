@@ -2,22 +2,35 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
-import { Toaster } from '@/components/ui/toaster';
+import { Geist, Geist_Mono } from 'next/font/google';
+import { CartProvider } from '@/lib/cart/CartContext';
 import '../globals.css';
+
+// Force Node.js runtime
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+const geistSans = Geist({
+    variable: '--font-geist-sans',
+    subsets: ['latin'],
+});
+
+const geistMono = Geist_Mono({
+    variable: '--font-geist-mono',
+    subsets: ['latin'],
+});
 
 export function generateStaticParams() {
     return routing.locales.map((locale) => ({ locale }));
 }
 
-interface LocaleLayoutProps {
-    children: React.ReactNode;
-    params: Promise<{ locale: string }>;
-}
-
 export default async function LocaleLayout({
     children,
     params,
-}: LocaleLayoutProps) {
+}: {
+    children: React.ReactNode;
+    params: Promise<{ locale: string }>;
+}) {
     const { locale } = await params;
 
     // Validate locale
@@ -28,17 +41,21 @@ export default async function LocaleLayout({
     // Enable static rendering
     setRequestLocale(locale);
 
-    // Get messages for the current locale
+    // Get messages for the locale
     const messages = await getMessages();
 
-    const isRTL = locale === 'ar';
+    // Determine text direction
+    const dir = locale === 'ar' ? 'rtl' : 'ltr';
 
     return (
-        <html lang={locale} dir={isRTL ? 'rtl' : 'ltr'}>
-            <body className={`min-h-screen bg-background font-sans antialiased ${isRTL ? 'rtl' : ''}`}>
+        <html lang={locale} dir={dir}>
+            <body
+                className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-gray-50`}
+            >
                 <NextIntlClientProvider messages={messages}>
-                    {children}
-                    <Toaster />
+                    <CartProvider>
+                        {children}
+                    </CartProvider>
                 </NextIntlClientProvider>
             </body>
         </html>
