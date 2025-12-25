@@ -15,22 +15,57 @@ export default async function SellerProductsPage({ params }: SellerProductsPageP
     const { locale } = await params;
     setRequestLocale(locale);
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    let seller: { id: string } | null = null;
+    let products: Array<{
+        id: string;
+        title_en: string;
+        title_ar: string;
+        price: number;
+        stock: number;
+        is_active: boolean;
+    }> | null = null;
 
-    // Get seller
-    const { data: seller } = await supabase
-        .from('sellers')
-        .select('id')
-        .eq('user_id', user!.id)
-        .single();
+    try {
+        const supabase = await createClient();
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    // Get products
-    const { data: products } = await supabase
-        .from('products')
-        .select('*')
-        .eq('seller_id', seller?.id || '')
-        .order('created_at', { ascending: false });
+        if (authError) {
+            console.error('[SellerProducts] Auth error:', authError.message);
+        }
+
+        if (!user) {
+            console.error('[SellerProducts] No user found');
+            return <div className="p-6">Loading...</div>;
+        }
+
+        // Get seller
+        const { data: sellerData, error: sellerError } = await supabase
+            .from('sellers')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        if (sellerError) {
+            console.error('[SellerProducts] Seller fetch error:', sellerError.message);
+        }
+        seller = sellerData;
+
+        // Get products
+        const { data: productsData, error: productsError } = await supabase
+            .from('products')
+            .select('*')
+            .eq('seller_id', seller?.id || '')
+            .order('created_at', { ascending: false });
+
+        if (productsError) {
+            console.error('[SellerProducts] Products fetch error:', productsError.message);
+        }
+        products = productsData;
+
+    } catch (error) {
+        console.error('[SellerProducts] Unhandled error:', error);
+        return <div className="p-6">Loading products...</div>;
+    }
 
     const t = {
         title: locale === 'ar' ? 'المنتجات' : 'Products',

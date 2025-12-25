@@ -13,26 +13,63 @@ export default async function SellerOrdersPage({ params }: SellerOrdersPageProps
     const { locale } = await params;
     setRequestLocale(locale);
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    type OrderItemType = {
+        id: string;
+        order_id: string;
+        qty: number;
+        orders: { id: string; created_at: string; status: string; total: number };
+        products: { title_en?: string; title_ar?: string };
+    };
 
-    // Get seller
-    const { data: seller } = await supabase
-        .from('sellers')
-        .select('id')
-        .eq('user_id', user!.id)
-        .single();
+    let seller: { id: string } | null = null;
+    let orderItems: OrderItemType[] | null = null;
 
-    // Get orders with items from this seller
-    const { data: orderItems } = await supabase
-        .from('order_items')
-        .select('*, orders!inner(*), products(title_en, title_ar)')
-        .eq('seller_id', seller?.id || '')
-        .order('created_at', { ascending: false });
+    try {
+        const supabase = await createClient();
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (authError) {
+            console.error('[SellerOrders] Auth error:', authError.message);
+        }
+
+        if (!user) {
+            console.error('[SellerOrders] No user found');
+            return <div className="p-6">Loading...</div>;
+        }
+
+        // Get seller
+        const { data: sellerData, error: sellerError } = await supabase
+            .from('sellers')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        if (sellerError) {
+            console.error('[SellerOrders] Seller fetch error:', sellerError.message);
+        }
+        seller = sellerData;
+
+        // Get orders with items from this seller
+        const { data: itemsData, error: ordersError } = await supabase
+            .from('order_items')
+            .select('*, orders!inner(*), products(title_en, title_ar)')
+            .eq('seller_id', seller?.id || '')
+            .order('created_at', { ascending: false });
+
+        if (ordersError) {
+            console.error('[SellerOrders] Orders fetch error:', ordersError.message);
+        }
+        orderItems = itemsData as OrderItemType[] | null;
+
+    } catch (error) {
+        console.error('[SellerOrders] Unhandled error:', error);
+        return <div className="p-6">Loading orders...</div>;
+    }
 
     // Group by order
     const ordersMap = new Map();
-    orderItems?.forEach(item => {
+    const itemsToProcess = orderItems || [];
+    itemsToProcess.forEach((item: OrderItemType) => {
         const order = item.orders as { id: string; created_at: string; status: string; total: number };
         if (order && !ordersMap.has(order.id)) {
             ordersMap.set(order.id, { ...order, items: [] });

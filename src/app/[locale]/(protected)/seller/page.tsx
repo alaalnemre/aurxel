@@ -7,44 +7,99 @@ interface SellerDashboardProps {
     params: Promise<{ locale: string }>;
 }
 
+// Force dynamic rendering and Node.js runtime - required for auth cookies
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export default async function SellerDashboard({ params }: SellerDashboardProps) {
     const { locale } = await params;
     setRequestLocale(locale);
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    let seller: { id: string; business_name: string | null } | null = null;
+    let productsCount: number | null = 0;
+    let ordersCount: number | null = 0;
+    let pendingCount = 0;
 
-    // Get seller info
-    const { data: seller } = await supabase
-        .from('sellers')
-        .select('id, business_name')
-        .eq('user_id', user!.id)
-        .single();
+    try {
+        const supabase = await createClient();
 
-    if (!seller) {
-        return <div>Loading...</div>;
+        // Use getUser() for proper JWT validation on Vercel edge runtime
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (authError) {
+            console.error('[SellerDashboard] Auth error:', authError.message);
+        }
+
+        if (!user) {
+            console.error('[SellerDashboard] No session found');
+            return <div className="p-6">Loading...</div>;
+        }
+
+        // Get seller info
+        const { data: sellerData, error: sellerError } = await supabase
+            .from('sellers')
+            .select('id, business_name')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        if (sellerError) {
+            console.error('[SellerDashboard] Seller fetch error:', sellerError.message);
+        }
+
+        if (!sellerData) {
+            return <div className="p-6">Loading seller data...</div>;
+        }
+        seller = sellerData;
+
+        // Get products count
+        const { count: prodCount, error: prodError } = await supabase
+            .from('products')
+            .select('*', { count: 'exact', head: true })
+            .eq('seller_id', seller.id);
+
+        if (prodError) {
+            console.error('[SellerDashboard] Products count error:', prodError.message);
+        }
+        productsCount = prodCount;
+
+        // Get orders count for this seller
+        const { count: ordCount, error: ordError } = await supabase
+            .from('order_items')
+            .select('*', { count: 'exact', head: true })
+            .eq('seller_id', seller.id);
+
+        if (ordError) {
+            console.error('[SellerDashboard] Orders count error:', ordError.message);
+        }
+        ordersCount = ordCount;
+
+        // Get pending orders
+        const { data: pendingOrders, error: pendingError } = await supabase
+            .from('order_items')
+            .select('order_id, orders!inner(status)')
+            .eq('seller_id', seller.id)
+            .eq('orders.status', 'pending_seller');
+
+        if (pendingError) {
+            console.error('[SellerDashboard] Pending orders error:', pendingError.message);
+        }
+        pendingCount = pendingOrders?.length || 0;
+
+    } catch (error) {
+        console.error('[SellerDashboard] Unhandled error:', error);
+        return (
+            <div className="space-y-6">
+                <div>
+                    <h1 className="text-2xl font-bold">
+                        {locale === 'ar' ? 'لوحة تحكم البائع' : 'Seller Dashboard'}
+                    </h1>
+                    <p className="text-muted-foreground">
+                        {locale === 'ar' ? 'جاري تحميل البيانات...' : 'Loading your data...'}
+                    </p>
+                </div>
+            </div>
+        );
     }
-
-    // Get products count
-    const { count: productsCount } = await supabase
-        .from('products')
-        .select('*', { count: 'exact', head: true })
-        .eq('seller_id', seller.id);
-
-    // Get orders count for this seller
-    const { count: ordersCount } = await supabase
-        .from('order_items')
-        .select('*', { count: 'exact', head: true })
-        .eq('seller_id', seller.id);
-
-    // Get pending orders
-    const { data: pendingOrders } = await supabase
-        .from('order_items')
-        .select('order_id, orders!inner(status)')
-        .eq('seller_id', seller.id)
-        .eq('orders.status', 'pending_seller');
-
-    const pendingCount = pendingOrders?.length || 0;
 
     return (
         <div className="space-y-6">

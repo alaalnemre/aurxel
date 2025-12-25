@@ -10,36 +10,80 @@ interface DriverDeliveriesPageProps {
     params: Promise<{ locale: string }>;
 }
 
+// Force dynamic rendering - required for auth cookies
+export const dynamic = 'force-dynamic';
+
 export default async function DriverDeliveriesPage({ params }: DriverDeliveriesPageProps) {
     const { locale } = await params;
     setRequestLocale(locale);
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    type DeliveryItem = {
+        id: string;
+        status: string;
+        pickup_address: string;
+        dropoff_address: string;
+        cod_amount: number;
+    };
 
-    // Get driver
-    const { data: driver } = await supabase
-        .from('drivers')
-        .select('id')
-        .eq('user_id', user!.id)
-        .single();
+    let availableDeliveries: DeliveryItem[] | null = null;
+    let myDeliveries: DeliveryItem[] | null = null;
 
-    // Get available deliveries
-    const { data: availableDeliveries } = await supabase
-        .from('deliveries')
-        .select('*')
-        .eq('status', 'available')
-        .order('created_at', { ascending: false });
+    try {
+        const supabase = await createClient();
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    // Get my deliveries
-    const { data: myDeliveries } = await supabase
-        .from('deliveries')
-        .select('*')
-        .eq('driver_id', driver?.id || '')
-        .order('created_at', { ascending: false });
+        if (authError) {
+            console.error('[DriverDeliveries] Auth error:', authError.message);
+        }
+
+        if (!user) {
+            console.error('[DriverDeliveries] No user found');
+            return <div className="p-6">Loading...</div>;
+        }
+
+        // Get driver
+        const { data: driver, error: driverError } = await supabase
+            .from('drivers')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        if (driverError) {
+            console.error('[DriverDeliveries] Driver fetch error:', driverError.message);
+        }
+
+        // Get available deliveries
+        const { data: availData, error: availError } = await supabase
+            .from('deliveries')
+            .select('*')
+            .eq('status', 'available')
+            .order('created_at', { ascending: false });
+
+        if (availError) {
+            console.error('[DriverDeliveries] Available deliveries error:', availError.message);
+        }
+        availableDeliveries = availData;
+
+        // Get my deliveries
+        const { data: myData, error: myError } = await supabase
+            .from('deliveries')
+            .select('*')
+            .eq('driver_id', driver?.id || '')
+            .order('created_at', { ascending: false });
+
+        if (myError) {
+            console.error('[DriverDeliveries] My deliveries error:', myError.message);
+        }
+        myDeliveries = myData;
+
+    } catch (error) {
+        console.error('[DriverDeliveries] Unhandled error:', error);
+        return <div className="p-6">Loading deliveries...</div>;
+    }
 
     const activeDeliveries = myDeliveries?.filter(d => ['assigned', 'picked_up'].includes(d.status)) || [];
     const completedDeliveries = myDeliveries?.filter(d => d.status === 'delivered') || [];
+
 
     const t = {
         title: locale === 'ar' ? 'التوصيلات' : 'Deliveries',

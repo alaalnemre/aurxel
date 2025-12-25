@@ -1,12 +1,12 @@
 import createIntlMiddleware from 'next-intl/middleware';
 import { NextResponse, type NextRequest } from 'next/server';
-import { updateSession } from '@/lib/supabase/middleware';
+import { createServerClient } from '@supabase/ssr';
 import { routing } from '@/i18n/routing';
 
 // Create the intl middleware
 const intlMiddleware = createIntlMiddleware(routing);
 
-// Routes that require authentication
+// Routes that require authentication check
 const protectedRoutes = ['/buyer', '/seller', '/driver', '/admin'];
 
 // Routes that are only for non-authenticated users
@@ -24,20 +24,7 @@ export async function middleware(request: NextRequest) {
         return NextResponse.next();
     }
 
-    // Update Supabase session (refreshes tokens if needed)
-    const { supabaseResponse, user } = await updateSession(request);
-
-    // Apply intl middleware for locale handling
-    const intlResponse = intlMiddleware(request);
-
-    // Copy cookies from Supabase response to intl response
-    supabaseResponse.cookies.getAll().forEach((cookie) => {
-        intlResponse.cookies.set(cookie.name, cookie.value, {
-            ...cookie,
-        });
-    });
-
-    // Extract locale from path
+    // Extract locale from path for routing decisions
     const pathLocale = pathname.split('/')[1];
     const locale = routing.locales.includes(pathLocale as 'en' | 'ar')
         ? pathLocale
@@ -52,19 +39,42 @@ export async function middleware(request: NextRequest) {
         pathWithoutLocale.startsWith(route)
     );
 
-    // Redirect to login if accessing protected route without auth
-    if (isProtectedRoute && !user) {
-        const loginUrl = new URL(`/${locale}/login`, request.url);
-        loginUrl.searchParams.set('redirect', pathname);
-        return NextResponse.redirect(loginUrl);
+    // Only check auth for protected or auth routes to minimize overhead
+    if (isProtectedRoute || isAuthRoute) {
+        // Create Supabase client just for auth check - lightweight
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                cookies: {
+                    getAll() {
+                        return request.cookies.getAll();
+                    },
+                    setAll() {
+                        // Intentionally empty - don't modify response here
+                        // Session refresh happens in server components
+                    },
+                },
+            }
+        );
+
+        const { data: { user } } = await supabase.auth.getUser();
+
+        // Redirect to login if accessing protected route without auth
+        if (isProtectedRoute && !user) {
+            const loginUrl = new URL(`/${locale}/login`, request.url);
+            loginUrl.searchParams.set('redirect', pathname);
+            return NextResponse.redirect(loginUrl);
+        }
+
+        // Redirect to dashboard if accessing auth routes while logged in
+        if (isAuthRoute && user) {
+            return NextResponse.redirect(new URL(`/${locale}/buyer`, request.url));
+        }
     }
 
-    // Redirect to dashboard if accessing auth routes while logged in
-    if (isAuthRoute && user) {
-        return NextResponse.redirect(new URL(`/${locale}/buyer`, request.url));
-    }
-
-    return intlResponse;
+    // Run intlMiddleware for locale handling - SINGLE response
+    return intlMiddleware(request);
 }
 
 export const config = {

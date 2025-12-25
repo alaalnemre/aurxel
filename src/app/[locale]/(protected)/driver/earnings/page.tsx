@@ -7,42 +7,81 @@ interface DriverEarningsPageProps {
     params: Promise<{ locale: string }>;
 }
 
+// Force dynamic rendering - required for auth cookies
+export const dynamic = 'force-dynamic';
+
 export default async function DriverEarningsPage({ params }: DriverEarningsPageProps) {
     const { locale } = await params;
     setRequestLocale(locale);
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    let walletBalance = 0;
+    let completedCount: number | null = 0;
+    let totalCodCollected = 0;
 
-    // Get driver
-    const { data: driver } = await supabase
-        .from('drivers')
-        .select('id')
-        .eq('user_id', user!.id)
-        .single();
+    try {
+        const supabase = await createClient();
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    // Get wallet
-    const { data: wallet } = await supabase
-        .from('wallet_accounts')
-        .select('balance')
-        .eq('owner_id', user!.id)
-        .single();
+        if (authError) {
+            console.error('[DriverEarnings] Auth error:', authError.message);
+        }
 
-    // Get completed deliveries count
-    const { count: completedCount } = await supabase
-        .from('deliveries')
-        .select('*', { count: 'exact', head: true })
-        .eq('driver_id', driver?.id || '')
-        .eq('status', 'delivered');
+        if (!user) {
+            console.error('[DriverEarnings] No user found');
+            return <div className="p-6">Loading...</div>;
+        }
 
-    // Get COD collected (sum of cod_amount from delivered orders)
-    const { data: deliveredOrders } = await supabase
-        .from('deliveries')
-        .select('cod_amount')
-        .eq('driver_id', driver?.id || '')
-        .eq('status', 'delivered');
+        // Get driver
+        const { data: driver, error: driverError } = await supabase
+            .from('drivers')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
 
-    const totalCodCollected = deliveredOrders?.reduce((sum, d) => sum + Number(d.cod_amount), 0) || 0;
+        if (driverError) {
+            console.error('[DriverEarnings] Driver fetch error:', driverError.message);
+        }
+
+        // Get wallet
+        const { data: wallet, error: walletError } = await supabase
+            .from('wallet_accounts')
+            .select('balance')
+            .eq('owner_id', user.id)
+            .maybeSingle();
+
+        if (walletError) {
+            console.error('[DriverEarnings] Wallet fetch error:', walletError.message);
+        }
+        walletBalance = wallet?.balance ? Number(wallet.balance) : 0;
+
+        // Get completed deliveries count
+        const { count, error: countError } = await supabase
+            .from('deliveries')
+            .select('*', { count: 'exact', head: true })
+            .eq('driver_id', driver?.id || '')
+            .eq('status', 'delivered');
+
+        if (countError) {
+            console.error('[DriverEarnings] Completed count error:', countError.message);
+        }
+        completedCount = count;
+
+        // Get COD collected
+        const { data: deliveredOrders, error: codError } = await supabase
+            .from('deliveries')
+            .select('cod_amount')
+            .eq('driver_id', driver?.id || '')
+            .eq('status', 'delivered');
+
+        if (codError) {
+            console.error('[DriverEarnings] COD fetch error:', codError.message);
+        }
+        totalCodCollected = deliveredOrders?.reduce((sum, d) => sum + Number(d.cod_amount), 0) || 0;
+
+    } catch (error) {
+        console.error('[DriverEarnings] Unhandled error:', error);
+    }
+
 
     const t = {
         title: locale === 'ar' ? 'الأرباح' : 'Earnings',
@@ -70,7 +109,7 @@ export default async function DriverEarningsPage({ params }: DriverEarningsPageP
                         <DollarSign className="h-4 w-4 opacity-75" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-bold">{wallet?.balance?.toFixed(2) || '0.00'} JOD</div>
+                        <div className="text-3xl font-bold">{walletBalance.toFixed(2)} JOD</div>
                         <p className="text-xs opacity-75 mt-1">{t.fromDeliveries}</p>
                     </CardContent>
                 </Card>

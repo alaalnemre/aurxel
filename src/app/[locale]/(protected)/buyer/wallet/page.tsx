@@ -12,23 +12,55 @@ export default async function BuyerWalletPage({ params }: BuyerWalletPageProps) 
     const { locale } = await params;
     setRequestLocale(locale);
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    let wallet: { id: string; balance: number } | null = null;
+    let transactions: Array<{ id: string; type: string; amount: number; created_at: string }> | null = null;
 
-    // Get wallet (maybeSingle to handle new users without wallet yet)
-    const { data: wallet } = await supabase
-        .from('wallet_accounts')
-        .select('id, balance')
-        .eq('owner_id', user!.id)
-        .maybeSingle();
+    try {
+        const supabase = await createClient();
 
-    // Get recent transactions
-    const { data: transactions } = wallet ? await supabase
-        .from('wallet_transactions')
-        .select('*')
-        .eq('account_id', wallet.id)
-        .order('created_at', { ascending: false })
-        .limit(10) : { data: null };
+        // Use getUser() for proper JWT validation on Vercel edge runtime
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (authError) {
+            console.error('[BuyerWallet] Auth error:', authError.message);
+        }
+
+        if (!user) {
+            console.error('[BuyerWallet] No session found');
+            return <div className="p-6">Loading...</div>;
+        }
+
+        // Get wallet (maybeSingle to handle new users without wallet yet)
+        const { data: walletData, error: walletError } = await supabase
+            .from('wallet_accounts')
+            .select('id, balance')
+            .eq('owner_id', user.id)
+            .maybeSingle();
+
+        if (walletError) {
+            console.error('[BuyerWallet] Wallet fetch error:', walletError.message);
+        }
+        wallet = walletData;
+
+        // Get recent transactions
+        if (wallet) {
+            const { data: txData, error: txError } = await supabase
+                .from('wallet_transactions')
+                .select('*')
+                .eq('account_id', wallet.id)
+                .order('created_at', { ascending: false })
+                .limit(10);
+
+            if (txError) {
+                console.error('[BuyerWallet] Transactions fetch error:', txError.message);
+            }
+            transactions = txData;
+        }
+
+    } catch (error) {
+        console.error('[BuyerWallet] Unhandled error:', error);
+    }
+
 
     const t = {
         title: locale === 'ar' ? 'المحفظة' : 'Wallet',

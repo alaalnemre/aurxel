@@ -9,60 +9,125 @@ interface DriverDashboardProps {
     params: Promise<{ locale: string }>;
 }
 
+// Force dynamic rendering and Node.js runtime - required for auth cookies
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export default async function DriverDashboard({ params }: DriverDashboardProps) {
     const { locale } = await params;
     setRequestLocale(locale);
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    let profileName = '';
+    let availableCount: number | null = 0;
+    let assignedCount: number | null = 0;
+    let completedCount: number | null = 0;
+    let walletBalance = 0;
 
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', user!.id)
-        .single();
+    try {
+        const supabase = await createClient();
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    // Get driver info
-    const { data: driver } = await supabase
-        .from('drivers')
-        .select('id')
-        .eq('user_id', user!.id)
-        .single();
+        if (authError) {
+            console.error('[DriverDashboard] Auth error:', authError.message);
+        }
 
-    // Get available deliveries count
-    const { count: availableCount } = await supabase
-        .from('deliveries')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'available');
+        if (!user) {
+            console.error('[DriverDashboard] No user found');
+            return <div className="p-6">Loading...</div>;
+        }
 
-    // Get assigned deliveries count
-    const { count: assignedCount } = await supabase
-        .from('deliveries')
-        .select('*', { count: 'exact', head: true })
-        .eq('driver_id', driver?.id)
-        .in('status', ['assigned', 'picked_up']);
+        const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .maybeSingle();
 
-    // Get completed deliveries count
-    const { count: completedCount } = await supabase
-        .from('deliveries')
-        .select('*', { count: 'exact', head: true })
-        .eq('driver_id', driver?.id)
-        .eq('status', 'delivered');
+        if (profileError) {
+            console.error('[DriverDashboard] Profile fetch error:', profileError.message);
+        }
+        profileName = profile?.full_name || '';
 
-    // Get wallet balance
-    const { data: wallet } = await supabase
-        .from('wallet_accounts')
-        .select('balance')
-        .eq('owner_id', user!.id)
-        .single();
+        // Get driver info
+        const { data: driver, error: driverError } = await supabase
+            .from('drivers')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        if (driverError) {
+            console.error('[DriverDashboard] Driver fetch error:', driverError.message);
+        }
+
+        // Get available deliveries count
+        const { count: availCount, error: availError } = await supabase
+            .from('deliveries')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'available');
+
+        if (availError) {
+            console.error('[DriverDashboard] Available count error:', availError.message);
+        }
+        availableCount = availCount;
+
+        // Get assigned deliveries count
+        const { count: assignCount, error: assignError } = await supabase
+            .from('deliveries')
+            .select('*', { count: 'exact', head: true })
+            .eq('driver_id', driver?.id)
+            .in('status', ['assigned', 'picked_up']);
+
+        if (assignError) {
+            console.error('[DriverDashboard] Assigned count error:', assignError.message);
+        }
+        assignedCount = assignCount;
+
+        // Get completed deliveries count
+        const { count: compCount, error: compError } = await supabase
+            .from('deliveries')
+            .select('*', { count: 'exact', head: true })
+            .eq('driver_id', driver?.id)
+            .eq('status', 'delivered');
+
+        if (compError) {
+            console.error('[DriverDashboard] Completed count error:', compError.message);
+        }
+        completedCount = compCount;
+
+        // Get wallet balance
+        const { data: wallet, error: walletError } = await supabase
+            .from('wallet_accounts')
+            .select('balance')
+            .eq('owner_id', user.id)
+            .maybeSingle();
+
+        if (walletError) {
+            console.error('[DriverDashboard] Wallet fetch error:', walletError.message);
+        }
+        walletBalance = wallet?.balance ? Number(wallet.balance) : 0;
+
+    } catch (error) {
+        console.error('[DriverDashboard] Unhandled error:', error);
+        return (
+            <div className="space-y-6">
+                <div>
+                    <h1 className="text-2xl font-bold">
+                        {locale === 'ar' ? 'لوحة تحكم السائق' : 'Driver Dashboard'}
+                    </h1>
+                    <p className="text-muted-foreground">
+                        {locale === 'ar' ? 'جاري تحميل البيانات...' : 'Loading your data...'}
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
             <div>
                 <h1 className="text-2xl font-bold">
                     {locale === 'ar'
-                        ? `مرحباً، ${profile?.full_name || 'سائق'}!`
-                        : `Welcome, ${profile?.full_name || 'Driver'}!`}
+                        ? `مرحباً، ${profileName || 'سائق'}!`
+                        : `Welcome, ${profileName || 'Driver'}!`}
                 </h1>
                 <p className="text-muted-foreground">
                     {locale === 'ar' ? 'إليك نظرة عامة على نشاطك' : "Here's your activity overview"}
@@ -124,7 +189,7 @@ export default async function DriverDashboard({ params }: DriverDashboardProps) 
                         <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{wallet?.balance?.toFixed(2) || '0.00'} JOD</div>
+                        <div className="text-2xl font-bold">{walletBalance.toFixed(2)} JOD</div>
                         <p className="text-xs text-muted-foreground">
                             {locale === 'ar' ? 'من التوصيلات' : 'from deliveries'}
                         </p>

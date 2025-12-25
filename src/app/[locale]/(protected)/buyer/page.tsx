@@ -5,6 +5,10 @@ import { Button } from '@/components/ui/button';
 import { ShoppingBag, Package, Wallet, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
+// Force dynamic rendering and Node.js runtime - required for auth cookies
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 interface BuyerDashboardProps {
     params: Promise<{ locale: string }>;
 }
@@ -13,28 +17,81 @@ export default async function BuyerDashboard({ params }: BuyerDashboardProps) {
     const { locale } = await params;
     setRequestLocale(locale);
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    let profile: { full_name: string | null } | null = null;
+    let ordersCount: number | null = 0;
+    let wallet: { balance: number | null } | null = null;
 
-    // Get profile (maybeSingle to handle edge cases)
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', user!.id)
-        .maybeSingle();
+    try {
+        const supabase = await createClient();
 
-    // Get recent orders count
-    const { count: ordersCount } = await supabase
-        .from('orders')
-        .select('*', { count: 'exact', head: true })
-        .eq('buyer_id', user!.id);
+        // Use getUser() for proper JWT validation on Vercel edge runtime
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    // Get wallet balance (maybeSingle to handle new users without wallet yet)
-    const { data: wallet } = await supabase
-        .from('wallet_accounts')
-        .select('balance')
-        .eq('owner_id', user!.id)
-        .maybeSingle();
+        if (authError) {
+            console.error('[BuyerDashboard] Auth error:', authError.message);
+        }
+
+        if (!user) {
+            console.error('[BuyerDashboard] No session found - should have been redirected by layout');
+            // Return minimal UI instead of crashing
+            return (
+                <div className="p-6">
+                    <p>Loading user data...</p>
+                </div>
+            );
+        }
+
+        // Get profile (maybeSingle to handle edge cases)
+        const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (profileError) {
+            console.error('[BuyerDashboard] Profile fetch error:', profileError.message, profileError.code, profileError.details);
+        }
+        profile = profileData;
+
+        // Get recent orders count
+        const { count, error: ordersError } = await supabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true })
+            .eq('buyer_id', user.id);
+
+        if (ordersError) {
+            console.error('[BuyerDashboard] Orders count error:', ordersError.message, ordersError.code);
+        }
+        ordersCount = count;
+
+        // Get wallet balance (maybeSingle to handle new users without wallet yet)
+        const { data: walletData, error: walletError } = await supabase
+            .from('wallet_accounts')
+            .select('balance')
+            .eq('owner_id', user.id)
+            .maybeSingle();
+
+        if (walletError) {
+            console.error('[BuyerDashboard] Wallet fetch error:', walletError.message, walletError.code, walletError.details);
+        }
+        wallet = walletData;
+
+    } catch (error) {
+        console.error('[BuyerDashboard] Unhandled error:', error);
+        // Return fail-safe UI instead of crashing
+        return (
+            <div className="space-y-6">
+                <div>
+                    <h1 className="text-2xl font-bold">
+                        {locale === 'ar' ? 'مرحباً!' : 'Welcome!'}
+                    </h1>
+                    <p className="text-muted-foreground">
+                        {locale === 'ar' ? 'جاري تحميل البيانات...' : 'Loading your data...'}
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     const greeting = locale === 'ar'
         ? `مرحباً، ${profile?.full_name || 'متسوق'}!`
@@ -77,7 +134,7 @@ export default async function BuyerDashboard({ params }: BuyerDashboardProps) {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">
-                            {wallet?.balance?.toFixed(2) || '0.00'}
+                            {wallet?.balance ? Number(wallet.balance).toFixed(2) : '0.00'}
                             <span className="text-sm font-normal text-muted-foreground ml-1">
                                 {locale === 'ar' ? 'قنز' : 'QANZ'}
                             </span>

@@ -12,16 +12,40 @@ export default async function BuyerOrdersPage({ params }: BuyerOrdersPageProps) 
     const { locale } = await params;
     setRequestLocale(locale);
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    let orders: Array<{ id: string; status: string; total: number; created_at: string }> | null = null;
 
-    // Get orders
-    const { data: orders } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('buyer_id', user!.id)
-        .order('created_at', { ascending: false })
-        .limit(20);
+    try {
+        const supabase = await createClient();
+
+        // Use getUser() for proper JWT validation on Vercel edge runtime
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (authError) {
+            console.error('[BuyerOrders] Auth error:', authError.message);
+        }
+
+        if (!user) {
+            console.error('[BuyerOrders] No session found');
+            return <div className="p-6">Loading...</div>;
+        }
+
+        // Get orders
+        const { data: ordersData, error: ordersError } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('buyer_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        if (ordersError) {
+            console.error('[BuyerOrders] Orders fetch error:', ordersError.message);
+        }
+        orders = ordersData;
+
+    } catch (error) {
+        console.error('[BuyerOrders] Unhandled error:', error);
+    }
+
 
     const t = {
         title: locale === 'ar' ? 'طلباتي' : 'My Orders',

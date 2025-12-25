@@ -11,34 +11,60 @@ export default async function SellerPayoutsPage({ params }: SellerPayoutsPagePro
     const { locale } = await params;
     setRequestLocale(locale);
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    let totalEarnings = 0;
+    let platformFee = 0;
+    let netEarnings = 0;
 
-    // Get seller
-    const { data: seller } = await supabase
-        .from('sellers')
-        .select('id')
-        .eq('user_id', user!.id)
-        .single();
+    try {
+        const supabase = await createClient();
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    // Get completed orders
-    const { data: orderItems } = await supabase
-        .from('order_items')
-        .select('price_snapshot, qty, orders!inner(status)')
-        .eq('seller_id', seller?.id || '');
+        if (authError) {
+            console.error('[SellerPayouts] Auth error:', authError.message);
+        }
 
-    // Calculate earnings
-    const completedItems = orderItems?.filter((item) => {
-        const order = item.orders as unknown as { status: string };
-        return order.status === 'completed';
-    }) || [];
+        if (!user) {
+            console.error('[SellerPayouts] No user found');
+            return <div className="p-6">Loading...</div>;
+        }
 
-    const totalEarnings = completedItems.reduce((sum, item) =>
-        sum + (Number(item.price_snapshot) * item.qty), 0
-    );
+        // Get seller
+        const { data: seller, error: sellerError } = await supabase
+            .from('sellers')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
 
-    const platformFee = totalEarnings * 0.1; // 10% platform fee
-    const netEarnings = totalEarnings - platformFee;
+        if (sellerError) {
+            console.error('[SellerPayouts] Seller fetch error:', sellerError.message);
+        }
+
+        // Get completed orders
+        const { data: orderItems, error: ordersError } = await supabase
+            .from('order_items')
+            .select('price_snapshot, qty, orders!inner(status)')
+            .eq('seller_id', seller?.id || '');
+
+        if (ordersError) {
+            console.error('[SellerPayouts] Orders fetch error:', ordersError.message);
+        }
+
+        // Calculate earnings
+        const completedItems = orderItems?.filter((item) => {
+            const order = item.orders as unknown as { status: string };
+            return order.status === 'completed';
+        }) || [];
+
+        totalEarnings = completedItems.reduce((sum, item) =>
+            sum + (Number(item.price_snapshot) * item.qty), 0
+        );
+
+        platformFee = totalEarnings * 0.1; // 10% platform fee
+        netEarnings = totalEarnings - platformFee;
+
+    } catch (error) {
+        console.error('[SellerPayouts] Unhandled error:', error);
+    }
 
     const t = {
         title: locale === 'ar' ? 'الأرباح والمدفوعات' : 'Earnings & Payouts',

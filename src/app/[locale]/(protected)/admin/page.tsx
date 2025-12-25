@@ -4,6 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, Store, Truck, ShoppingCart, AlertTriangle, DollarSign } from 'lucide-react';
 import Link from 'next/link';
 
+// Force dynamic rendering and Node.js runtime - required for auth cookies
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 interface AdminDashboardProps {
     params: Promise<{ locale: string }>;
 }
