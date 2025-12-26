@@ -15,6 +15,7 @@ export interface ProfileResult {
 /**
  * Get the current user's profile and role-specific data from database.
  * Uses supabase.auth.getUser() for secure authentication.
+ * AUTO-CREATES profile if it doesn't exist (safety net if trigger fails).
  */
 export async function getProfile(): Promise<ProfileResult> {
     const supabase = await createClient();
@@ -36,32 +37,42 @@ export async function getProfile(): Promise<ProfileResult> {
     }
 
     // Get profile from database
-    const { data: profile, error: profileError } = await supabase
+    let { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .maybeSingle();
 
     if (profileError) {
-        console.error('[getProfile] Profile error:', profileError);
-        return {
-            user: { id: user.id, email: user.email || '' },
-            profile: null,
-            sellerProfile: null,
-            driverProfile: null,
-            error: 'Failed to fetch profile',
-        };
+        console.error('[getProfile] Profile fetch error:', profileError);
     }
 
+    // AUTO-CREATE profile if missing (safety net)
     if (!profile) {
-        // Profile doesn't exist yet (shouldn't happen with trigger, but handle gracefully)
-        return {
-            user: { id: user.id, email: user.email || '' },
-            profile: null,
-            sellerProfile: null,
-            driverProfile: null,
-            error: 'Profile not found',
-        };
+        console.log('[getProfile] Creating missing profile for user:', user.id);
+        const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert({
+                id: user.id,
+                role: 'buyer',
+                full_name: user.user_metadata?.full_name || '',
+                email: user.email,
+            })
+            .select()
+            .single();
+
+        if (createError) {
+            console.error('[getProfile] Failed to create profile:', createError);
+            // Still return user info even if profile creation fails
+            return {
+                user: { id: user.id, email: user.email || '' },
+                profile: null,
+                sellerProfile: null,
+                driverProfile: null,
+                error: 'Failed to create profile',
+            };
+        }
+        profile = newProfile;
     }
 
     // Fetch role-specific profiles based on role

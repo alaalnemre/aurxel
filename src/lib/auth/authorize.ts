@@ -9,8 +9,9 @@ interface AuthorizeOptions {
 }
 
 /**
- * Authorize access to a protected dashboard based on database role and status.
- * Returns authorization result with redirect path if not authorized.
+ * Authorize access to a protected dashboard based on role ONLY.
+ * NO checks for: profile_completed, is_verified, approved, accepted_join_terms
+ * Simply matches role and redirects to correct dashboard if mismatch.
  */
 export async function authorize({
     requiredRole,
@@ -28,12 +29,17 @@ export async function authorize({
         };
     }
 
-    // Profile not found (shouldn't happen, but handle gracefully)
+    // Profile was created (or already exists) - proceed with role check
+    // If profile is still null after auto-create attempt, allow access anyway
+    // This prevents redirect loops
     if (!profile) {
+        // Still allow access - page will handle missing profile gracefully
         return {
-            authorized: false,
-            redirectTo: `/${locale}/login`,
-            reason: 'Profile not found',
+            authorized: true,
+            user,
+            profile: undefined,
+            sellerProfile: undefined,
+            driverProfile: undefined,
         };
     }
 
@@ -50,10 +56,9 @@ export async function authorize({
         };
     }
 
-    // Check role-specific access
+    // Simple role matching - NO approval/status checks
     switch (requiredRole) {
         case 'buyer':
-            // Buyers can access buyer dashboard
             if (userRole === 'buyer') {
                 return {
                     authorized: true,
@@ -65,114 +70,47 @@ export async function authorize({
             return {
                 authorized: false,
                 redirectTo: `/${locale}/${userRole}`,
-                reason: `Access denied. Your role is ${userRole}`,
+                reason: `Your role is ${userRole}`,
             };
 
         case 'seller':
-            // Must have seller role
-            if (userRole !== 'seller') {
-                // If buyer, redirect to seller onboarding
-                if (userRole === 'buyer') {
-                    return {
-                        authorized: false,
-                        redirectTo: `/${locale}/seller/onboarding`,
-                        reason: 'Complete seller registration first',
-                    };
-                }
+            if (userRole === 'seller') {
+                // ALLOW ACCESS regardless of seller_profile status
+                // Page will show appropriate UI for pending/rejected
                 return {
-                    authorized: false,
-                    redirectTo: `/${locale}/${userRole}`,
-                    reason: `Access denied. Your role is ${userRole}`,
+                    authorized: true,
+                    user,
+                    profile,
+                    sellerProfile,
                 };
             }
-
-            // Must have approved seller profile
-            if (!sellerProfile) {
-                return {
-                    authorized: false,
-                    redirectTo: `/${locale}/seller/onboarding`,
-                    reason: 'Complete seller registration first',
-                };
-            }
-
-            if (sellerProfile.status === 'pending') {
-                return {
-                    authorized: false,
-                    redirectTo: `/${locale}/seller/pending`,
-                    reason: 'Awaiting approval',
-                };
-            }
-
-            if (sellerProfile.status === 'rejected') {
-                return {
-                    authorized: false,
-                    redirectTo: `/${locale}/seller/rejected`,
-                    reason: 'Application rejected',
-                };
-            }
-
-            // Approved seller
+            // Redirect non-sellers to their dashboard
             return {
-                authorized: true,
-                user,
-                profile,
-                sellerProfile,
+                authorized: false,
+                redirectTo: `/${locale}/${userRole}`,
+                reason: `Your role is ${userRole}`,
             };
 
         case 'driver':
-            // Must have driver role
-            if (userRole !== 'driver') {
-                // If buyer, redirect to driver onboarding
-                if (userRole === 'buyer') {
-                    return {
-                        authorized: false,
-                        redirectTo: `/${locale}/driver/onboarding`,
-                        reason: 'Complete driver registration first',
-                    };
-                }
+            if (userRole === 'driver') {
+                // ALLOW ACCESS regardless of driver_profile status
+                // Page will show appropriate UI for pending/rejected
                 return {
-                    authorized: false,
-                    redirectTo: `/${locale}/${userRole}`,
-                    reason: `Access denied. Your role is ${userRole}`,
+                    authorized: true,
+                    user,
+                    profile,
+                    driverProfile,
                 };
             }
-
-            // Must have approved driver profile
-            if (!driverProfile) {
-                return {
-                    authorized: false,
-                    redirectTo: `/${locale}/driver/onboarding`,
-                    reason: 'Complete driver registration first',
-                };
-            }
-
-            if (driverProfile.status === 'pending') {
-                return {
-                    authorized: false,
-                    redirectTo: `/${locale}/driver/pending`,
-                    reason: 'Awaiting approval',
-                };
-            }
-
-            if (driverProfile.status === 'rejected') {
-                return {
-                    authorized: false,
-                    redirectTo: `/${locale}/driver/rejected`,
-                    reason: 'Application rejected',
-                };
-            }
-
-            // Approved driver
+            // Redirect non-drivers to their dashboard
             return {
-                authorized: true,
-                user,
-                profile,
-                driverProfile,
+                authorized: false,
+                redirectTo: `/${locale}/${userRole}`,
+                reason: `Your role is ${userRole}`,
             };
 
         case 'admin':
-            // Admin users already returned above with authorized: true
-            // Non-admin users reaching here should be redirected
+            // Only admins can access admin routes (handled above)
             return {
                 authorized: false,
                 redirectTo: `/${locale}/${userRole}`,
@@ -180,10 +118,11 @@ export async function authorize({
             };
 
         default:
+            // Unknown role - redirect to buyer (default)
             return {
                 authorized: false,
-                redirectTo: `/${locale}/login`,
-                reason: 'Unknown dashboard type',
+                redirectTo: `/${locale}/buyer`,
+                reason: 'Unknown dashboard',
             };
     }
 }

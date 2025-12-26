@@ -1,5 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from '@/i18n/navigation';
+import { redirect } from 'next/navigation';
 import { getLocale } from 'next-intl/server';
 import { getProfile } from '@/lib/auth/get-profile';
 
@@ -13,20 +12,17 @@ export default async function ProtectedLayout({
     children: React.ReactNode;
 }) {
     const locale = await getLocale();
-    const { user, profile, error } = await getProfile();
+    const { user, error } = await getProfile();
 
     // Not authenticated - redirect to login
+    // This is the ONLY redirect condition
     if (!user || error === 'Not authenticated') {
-        redirect({ href: '/login', locale });
+        redirect(`/${locale}/login`);
     }
 
-    // Profile not found - this shouldn't happen with trigger, but handle gracefully
-    if (!profile) {
-        // Try to create profile manually or redirect
-        redirect({ href: '/login', locale });
-    }
+    // Profile may or may not exist - that's OK
+    // getProfile() auto-creates if missing
+    // Individual pages handle role-specific authorization via authorize()
 
-    // User is authenticated, allow access to protected routes
-    // Individual dashboard pages will handle role-specific authorization
     return <>{children}</>;
 }
