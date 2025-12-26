@@ -30,7 +30,14 @@ export default async function SellerDashboard({
         return <SellerOnboarding locale={locale} sellerProfile={sellerProfile} />;
     }
 
-    // Fetch stats
+    // Fetch wallet
+    const { data: wallet } = await supabase
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', user?.id)
+        .maybeSingle();
+
+    // Product stats
     const { count: totalProducts } = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
@@ -43,217 +50,234 @@ export default async function SellerDashboard({
         .eq('is_active', true)
         .gt('stock', 0);
 
-    const { data: orders } = await supabase
+    const { count: outOfStock } = await supabase
+        .from('products')
+        .select('*', { count: 'exact', head: true })
+        .eq('seller_id', user?.id)
+        .eq('stock', 0);
+
+    // Order stats
+    const { count: totalOrders } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('seller_id', user?.id);
+
+    const { count: newOrders } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('seller_id', user?.id)
+        .eq('status', 'placed');
+
+    const { count: processingOrders } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('seller_id', user?.id)
+        .in('status', ['accepted', 'preparing', 'ready']);
+
+    const { count: deliveredOrders } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('seller_id', user?.id)
+        .eq('status', 'delivered');
+
+    // Earnings
+    const { data: deliveredData } = await supabase
+        .from('orders')
+        .select('total_amount')
+        .eq('seller_id', user?.id)
+        .eq('status', 'delivered');
+
+    const totalEarnings = deliveredData?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
+    const platformFee = totalEarnings * 0.05;
+    const netEarnings = totalEarnings - platformFee;
+
+    // Today's orders
+    const today = new Date().toISOString().split('T')[0];
+    const { count: todayOrders } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('seller_id', user?.id)
+        .gte('created_at', today);
+
+    // Recent orders
+    const { data: recentOrders } = await supabase
         .from('orders')
         .select('id, status, total_amount, created_at')
         .eq('seller_id', user?.id)
         .order('created_at', { ascending: false })
         .limit(5);
 
-    const { count: pendingOrders } = await supabase
-        .from('orders')
-        .select('*', { count: 'exact', head: true })
-        .eq('seller_id', user?.id)
-        .in('status', ['placed', 'accepted', 'preparing']);
-
-    // Calculate total earnings
-    const { data: deliveredOrders } = await supabase
-        .from('orders')
-        .select('total_amount')
-        .eq('seller_id', user?.id)
-        .eq('status', 'delivered');
-
-    const totalEarnings = deliveredOrders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
-
     return (
         <div className="space-y-6 animate-fadeIn">
+            {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold">{t('dashboard')}</h1>
-                    <p className="text-secondary">{sellerProfile?.business_name}</p>
+                    <h1 className="text-2xl font-bold">{sellerProfile?.business_name}</h1>
+                    <p className="text-secondary">{t('dashboard')}</p>
                 </div>
-                {!sellerProfile?.is_verified && (
-                    <div className="px-3 py-1.5 bg-warning/10 text-warning text-sm rounded-full">
-                        ⏳ {t('verificationPending')}
-                    </div>
-                )}
-                {sellerProfile?.is_verified && (
-                    <div className="px-3 py-1.5 bg-success/10 text-success text-sm rounded-full">
-                        ✓ {t('verified')}
-                    </div>
-                )}
+                <div className="flex items-center gap-2">
+                    {sellerProfile?.is_verified ? (
+                        <span className="px-3 py-1.5 bg-success/10 text-success text-sm rounded-full">
+                            ✓ {t('verified')}
+                        </span>
+                    ) : (
+                        <span className="px-3 py-1.5 bg-warning/10 text-warning text-sm rounded-full">
+                            ⏳ {t('verificationPending')}
+                        </span>
+                    )}
+                </div>
             </div>
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <KPICard
-                    icon="📦"
-                    label={t('totalProducts')}
-                    value={String(totalProducts || 0)}
-                    color="primary"
-                />
-                <KPICard
-                    icon="✅"
-                    label={t('activeProducts')}
-                    value={String(activeProducts || 0)}
-                    color="success"
-                />
-                <KPICard
-                    icon="🛒"
-                    label={t('pendingOrders')}
-                    value={String(pendingOrders || 0)}
-                    color="warning"
-                    href={`/${locale}/seller/orders`}
-                />
-                <KPICard
-                    icon="💰"
-                    label={t('totalEarnings')}
-                    value={`${totalEarnings.toFixed(2)} JOD`}
-                    color="accent"
-                />
+            {/* Financial Overview */}
+            <div className="bg-gradient-to-br from-success to-green-600 rounded-2xl p-6 text-white">
+                <h2 className="text-lg opacity-90 mb-4">💰 {locale === 'ar' ? 'الملخص المالي' : 'Financial Summary'}</h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <p className="text-3xl font-bold">{totalEarnings.toFixed(0)}</p>
+                        <p className="text-sm opacity-75">{locale === 'ar' ? 'إجمالي المبيعات' : 'Total Sales'} (JOD)</p>
+                    </div>
+                    <div>
+                        <p className="text-3xl font-bold">{netEarnings.toFixed(0)}</p>
+                        <p className="text-sm opacity-75">{locale === 'ar' ? 'صافي الربح' : 'Net Earnings'} (JOD)</p>
+                    </div>
+                    <div>
+                        <p className="text-3xl font-bold">{wallet?.balance?.toFixed(0) || 0}</p>
+                        <p className="text-sm opacity-75">💎 QANZ</p>
+                    </div>
+                    <div>
+                        <p className="text-3xl font-bold">{deliveredOrders || 0}</p>
+                        <p className="text-sm opacity-75">{locale === 'ar' ? 'طلبات مكتملة' : 'Completed'}</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                <StatCard icon="📦" label={locale === 'ar' ? 'المنتجات' : 'Products'} value={totalProducts || 0} />
+                <StatCard icon="✅" label={locale === 'ar' ? 'نشط' : 'Active'} value={activeProducts || 0} color="success" />
+                <StatCard icon="⚠️" label={locale === 'ar' ? 'نفذ المخزون' : 'Out of Stock'} value={outOfStock || 0} color="warning" />
+                <StatCard icon="🆕" label={locale === 'ar' ? 'طلبات جديدة' : 'New Orders'} value={newOrders || 0} color="primary" highlight={newOrders ? newOrders > 0 : false} />
+                <StatCard icon="⏳" label={locale === 'ar' ? 'قيد التنفيذ' : 'Processing'} value={processingOrders || 0} color="warning" />
+                <StatCard icon="📅" label={locale === 'ar' ? 'اليوم' : 'Today'} value={todayOrders || 0} color="accent" />
             </div>
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Link
-                    href={`/${locale}/seller/products/new`}
-                    className="bg-card rounded-xl p-4 shadow-card hover:shadow-card-hover transition-all text-center group"
-                >
-                    <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">➕</div>
-                    <span className="font-medium">{t('addProduct')}</span>
-                </Link>
-                <Link
-                    href={`/${locale}/seller/orders`}
-                    className="bg-card rounded-xl p-4 shadow-card hover:shadow-card-hover transition-all text-center group"
-                >
-                    <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📋</div>
-                    <span className="font-medium">{t('orders')}</span>
-                </Link>
-                <Link
-                    href={`/${locale}/seller/products`}
-                    className="bg-card rounded-xl p-4 shadow-card hover:shadow-card-hover transition-all text-center group"
-                >
-                    <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📦</div>
-                    <span className="font-medium">{t('products')}</span>
-                </Link>
-                <Link
-                    href={`/${locale}/seller/payouts`}
-                    className="bg-card rounded-xl p-4 shadow-card hover:shadow-card-hover transition-all text-center group"
-                >
-                    <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">💳</div>
-                    <span className="font-medium">{t('payouts')}</span>
-                </Link>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <QuickAction href={`/${locale}/seller/products/new`} icon="➕" label={t('addProduct')} primary />
+                <QuickAction href={`/${locale}/seller/orders`} icon="📋" label={t('orders')} badge={newOrders} />
+                <QuickAction href={`/${locale}/seller/products`} icon="📦" label={t('products')} />
+                <QuickAction href={`/${locale}/seller/wallet`} icon="💎" label={locale === 'ar' ? 'المحفظة' : 'Wallet'} />
+                <QuickAction href={`/${locale}/seller/settings`} icon="⚙️" label={locale === 'ar' ? 'الإعدادات' : 'Settings'} />
             </div>
 
-            {/* Recent Orders */}
-            <div className="bg-card rounded-2xl p-6 shadow-card">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold">{locale === 'ar' ? 'أحدث الطلبات' : 'Recent Orders'}</h2>
-                    <Link
-                        href={`/${locale}/seller/orders`}
-                        className="text-sm text-primary hover:underline"
-                    >
-                        {locale === 'ar' ? 'عرض الكل' : 'View All'}
-                    </Link>
+            {/* Order Status Breakdown */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Status */}
+                <div className="bg-card rounded-2xl p-6 shadow-card">
+                    <h2 className="text-lg font-semibold mb-4">{locale === 'ar' ? 'توزيع الطلبات' : 'Order Distribution'}</h2>
+                    <div className="space-y-3">
+                        <StatusBar label={locale === 'ar' ? 'جديد' : 'New'} value={newOrders || 0} total={totalOrders || 1} color="bg-blue-500" />
+                        <StatusBar label={locale === 'ar' ? 'قيد التنفيذ' : 'Processing'} value={processingOrders || 0} total={totalOrders || 1} color="bg-yellow-500" />
+                        <StatusBar label={locale === 'ar' ? 'تم التوصيل' : 'Delivered'} value={deliveredOrders || 0} total={totalOrders || 1} color="bg-green-500" />
+                    </div>
                 </div>
 
-                {orders && orders.length > 0 ? (
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead>
-                                <tr className="text-left text-sm text-secondary border-b border-border">
-                                    <th className="pb-3 font-medium">{locale === 'ar' ? 'رقم الطلب' : 'Order ID'}</th>
-                                    <th className="pb-3 font-medium">{locale === 'ar' ? 'التاريخ' : 'Date'}</th>
-                                    <th className="pb-3 font-medium">{locale === 'ar' ? 'المبلغ' : 'Amount'}</th>
-                                    <th className="pb-3 font-medium">{locale === 'ar' ? 'الحالة' : 'Status'}</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
-                                {orders.map((order) => (
-                                    <tr key={order.id} className="hover:bg-muted/50">
-                                        <td className="py-3 font-mono text-sm">#{order.id.slice(0, 8)}</td>
-                                        <td className="py-3 text-secondary">
-                                            {new Date(order.created_at).toLocaleDateString(locale === 'ar' ? 'ar-JO' : 'en-JO')}
-                                        </td>
-                                        <td className="py-3 font-medium">{order.total_amount} JOD</td>
-                                        <td className="py-3">
-                                            <StatusBadge status={order.status} />
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                {/* Recent Orders */}
+                <div className="bg-card rounded-2xl p-6 shadow-card">
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-lg font-semibold">{locale === 'ar' ? 'أحدث الطلبات' : 'Recent Orders'}</h2>
+                        <Link href={`/${locale}/seller/orders`} className="text-sm text-primary hover:underline">
+                            {locale === 'ar' ? 'عرض الكل' : 'View All'}
+                        </Link>
                     </div>
-                ) : (
-                    <div className="text-center py-8 text-secondary">
-                        {locale === 'ar' ? 'لا توجد طلبات بعد' : 'No orders yet'}
-                    </div>
-                )}
+                    {recentOrders && recentOrders.length > 0 ? (
+                        <div className="space-y-2">
+                            {recentOrders.map((order) => (
+                                <div key={order.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                                    <div>
+                                        <p className="font-mono text-sm">#{order.id.slice(0, 8)}</p>
+                                        <p className="text-xs text-secondary">{timeAgo(order.created_at, locale)}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="font-medium">{order.total_amount} JOD</p>
+                                        <StatusBadge status={order.status} />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-center text-secondary py-4">{locale === 'ar' ? 'لا توجد طلبات' : 'No orders yet'}</p>
+                    )}
+                </div>
             </div>
         </div>
     );
 }
 
-function KPICard({
-    icon,
-    label,
-    value,
-    color,
-    href,
-}: {
-    icon: string;
-    label: string;
-    value: string;
-    color: 'primary' | 'accent' | 'warning' | 'success';
-    href?: string;
-}) {
-    const colorClasses = {
-        primary: 'bg-primary/10 text-primary',
-        accent: 'bg-accent/10 text-accent',
-        warning: 'bg-warning/10 text-warning',
-        success: 'bg-success/10 text-success',
-    };
-
-    const content = (
-        <>
-            <div className="flex items-center gap-3 mb-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colorClasses[color]}`}>
-                    <span className="text-lg">{icon}</span>
-                </div>
-                <span className="text-sm text-secondary">{label}</span>
-            </div>
+function StatCard({ icon, label, value, color, highlight }: { icon: string; label: string; value: number; color?: string; highlight?: boolean }) {
+    return (
+        <div className={`bg-card rounded-xl p-4 shadow-card relative ${highlight ? 'ring-2 ring-primary' : ''}`}>
+            {highlight && <span className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full animate-pulse" />}
+            <div className="text-xl mb-1">{icon}</div>
             <p className="text-2xl font-bold">{value}</p>
-        </>
+            <p className="text-xs text-secondary">{label}</p>
+        </div>
     );
+}
 
-    if (href) {
-        return (
-            <Link href={href} className="bg-card rounded-2xl p-5 shadow-card hover:shadow-card-hover transition-all">
-                {content}
-            </Link>
-        );
-    }
+function QuickAction({ href, icon, label, primary, badge }: { href: string; icon: string; label: string; primary?: boolean; badge?: number | null }) {
+    return (
+        <Link
+            href={href}
+            className={`rounded-xl p-4 text-center transition-all group relative ${primary ? 'bg-primary text-white hover:bg-primary-dark' : 'bg-card shadow-card hover:shadow-card-hover'
+                }`}
+        >
+            {badge && badge > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-warning text-white text-xs rounded-full flex items-center justify-center">
+                    {badge}
+                </span>
+            )}
+            <div className="text-2xl mb-2 group-hover:scale-110 transition-transform">{icon}</div>
+            <span className="font-medium text-sm">{label}</span>
+        </Link>
+    );
+}
 
-    return <div className="bg-card rounded-2xl p-5 shadow-card">{content}</div>;
+function StatusBar({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
+    const percentage = total > 0 ? (value / total) * 100 : 0;
+    return (
+        <div>
+            <div className="flex justify-between text-sm mb-1">
+                <span>{label}</span>
+                <span className="font-medium">{value}</span>
+            </div>
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div className={`h-full ${color} rounded-full`} style={{ width: `${percentage}%` }} />
+            </div>
+        </div>
+    );
 }
 
 function StatusBadge({ status }: { status: string }) {
-    const statusConfig: Record<string, { bg: string; text: string; label: string }> = {
-        placed: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'New' },
-        accepted: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Accepted' },
-        preparing: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Preparing' },
-        ready: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Ready' },
-        assigned: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Assigned' },
-        picked_up: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Picked Up' },
-        delivered: { bg: 'bg-green-100', text: 'text-green-700', label: 'Delivered' },
-        cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Cancelled' },
+    const colors: Record<string, string> = {
+        placed: 'bg-blue-100 text-blue-700',
+        accepted: 'bg-purple-100 text-purple-700',
+        preparing: 'bg-yellow-100 text-yellow-700',
+        ready: 'bg-orange-100 text-orange-700',
+        delivered: 'bg-green-100 text-green-700',
+        cancelled: 'bg-red-100 text-red-700',
     };
-
-    const config = statusConfig[status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: status };
-
     return (
-        <span className={`text-xs px-2 py-1 rounded-full ${config.bg} ${config.text}`}>
-            {config.label}
+        <span className={`text-xs px-2 py-0.5 rounded-full ${colors[status] || 'bg-gray-100'}`}>
+            {status}
         </span>
     );
+}
+
+function timeAgo(date: string, locale: string): string {
+    const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+    if (seconds < 60) return locale === 'ar' ? 'الآن' : 'Just now';
+    if (seconds < 3600) return locale === 'ar' ? `منذ ${Math.floor(seconds / 60)} د` : `${Math.floor(seconds / 60)}m`;
+    if (seconds < 86400) return locale === 'ar' ? `منذ ${Math.floor(seconds / 3600)} س` : `${Math.floor(seconds / 3600)}h`;
+    return locale === 'ar' ? `منذ ${Math.floor(seconds / 86400)} ي` : `${Math.floor(seconds / 86400)}d`;
 }
