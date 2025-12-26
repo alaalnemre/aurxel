@@ -56,13 +56,14 @@ export async function submitSellerOnboarding(
         return { success: false, error: 'Application already submitted' };
     }
 
-    // Update user role to seller and mark terms accepted
+    // Update user role to seller and mark terms accepted + profile completed
     const { error: roleError } = await supabase
         .from('profiles')
         .update({
             role: 'seller',
             accepted_join_terms: true,
             accepted_join_terms_at: new Date().toISOString(),
+            profile_completed: true,
         })
         .eq('id', user.id);
 
@@ -139,13 +140,14 @@ export async function submitDriverOnboarding(
         return { success: false, error: 'Application already submitted' };
     }
 
-    // Update user role to driver and mark terms accepted
+    // Update user role to driver and mark terms accepted + profile completed
     const { error: roleError } = await supabase
         .from('profiles')
         .update({
             role: 'driver',
             accepted_join_terms: true,
             accepted_join_terms_at: new Date().toISOString(),
+            profile_completed: true,
         })
         .eq('id', user.id);
 

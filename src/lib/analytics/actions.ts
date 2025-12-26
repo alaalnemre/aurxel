@@ -33,7 +33,7 @@ export async function getAdminAnalytics(): Promise<AdminAnalytics | null> {
         supabase.from('orders').select('id, total_amount, status, created_at'),
         supabase.from('profiles').select('id, role'),
         supabase.from('cash_collections').select('amount_expected, status'),
-        supabase.from('profiles').select('id').eq('role', 'driver').eq('is_verified', true),
+        supabase.from('driver_profiles').select('id').eq('status', 'approved'),
     ]);
 
     const orders = ordersResult.data || [];

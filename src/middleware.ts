@@ -1,84 +1,80 @@
-import createMiddleware from 'next-intl/middleware';
-import { type NextRequest, NextResponse } from 'next/server';
-import { updateSession } from '@/lib/supabase/middleware';
+// src/middleware.ts
+import createIntlMiddleware from 'next-intl/middleware';
+import { NextResponse, type NextRequest } from 'next/server';
 import { routing } from '@/i18n/routing';
+import { updateSession } from '@/lib/supabase/middleware';
 
-// Protected route patterns (without locale prefix)
-const protectedPaths = ['/buyer', '/seller', '/driver', '/admin'];
+// Public routes (locale-prefixed or not handled by intl middleware)
+const PUBLIC_PATHS = [
+    '/', // handled by intl middleware
+    '/login',
+    '/register',
+    '/join-terms',
+    '/auth/callback',
+    '/forgot-password'
+];
 
-// Create the next-intl middleware
-const intlMiddleware = createMiddleware(routing);
+// Protected top-level prefixes (WITHOUT locale)
+const PROTECTED_PREFIXES = ['/buyer', '/seller', '/driver', '/admin', '/wallet', '/notifications', '/checkout'];
 
-export async function middleware(request: NextRequest) {
-    const { pathname } = request.nextUrl;
-
-    // Skip middleware for static files and API routes
-    if (
-        pathname.includes('.') ||
-        pathname.startsWith('/_next') ||
-        pathname.startsWith('/api')
-    ) {
-        return NextResponse.next();
+function stripLocale(pathname: string) {
+    // pathname: /en/seller => /seller
+    const parts = pathname.split('/').filter(Boolean);
+    if (parts[0] === 'en' || parts[0] === 'ar') {
+        return '/' + parts.slice(1).join('/');
     }
-
-    // First, handle the intl routing
-    const intlResponse = intlMiddleware(request);
-
-    // Extract locale from path
-    const pathParts = pathname.split('/');
-    const locale = routing.locales.includes(pathParts[1] as 'en' | 'ar')
-        ? pathParts[1]
-        : routing.defaultLocale;
-
-    // Check if this is a protected route
-    const pathWithoutLocale = '/' + pathParts.slice(2).join('/');
-    const isProtectedRoute = protectedPaths.some(
-        (path) =>
-            pathWithoutLocale === path || pathWithoutLocale.startsWith(path + '/')
-    );
-
-    if (isProtectedRoute) {
-        // Update session and check auth
-        const { user, supabaseResponse } = await updateSession(request);
-
-        if (!user) {
-            // Redirect to login with the current path as redirect
-            const loginUrl = new URL(`/${locale}/login`, request.url);
-            loginUrl.searchParams.set('redirect', pathname);
-            return NextResponse.redirect(loginUrl);
-        }
-
-        // User is authenticated, merge cookies from supabase response
-        const response = intlResponse || NextResponse.next({ request });
-        supabaseResponse.cookies.getAll().forEach((cookie) => {
-            response.cookies.set(cookie.name, cookie.value);
-        });
-
-        return response;
-    }
-
-    // For non-protected routes, just update session to keep it fresh
-    // but don't require authentication
-    const { supabaseResponse } = await updateSession(request);
-
-    // Merge cookies
-    const response = intlResponse || NextResponse.next({ request });
-    supabaseResponse.cookies.getAll().forEach((cookie) => {
-        response.cookies.set(cookie.name, cookie.value);
-    });
-
-    return response;
+    return pathname;
 }
 
+function isPublicPath(pathnameNoLocale: string) {
+    // exact matches OR startsWith for callback paths
+    return (
+        PUBLIC_PATHS.includes(pathnameNoLocale) ||
+        PUBLIC_PATHS.some((p) => p !== '/' && pathnameNoLocale.startsWith(p))
+    );
+}
+
+function isProtectedPath(pathnameNoLocale: string) {
+    return PROTECTED_PREFIXES.some(
+        (p) => pathnameNoLocale === p || pathnameNoLocale.startsWith(p + '/')
+    );
+}
+
+// next-intl middleware
+const intlMiddleware = createIntlMiddleware(routing);
+
+export default async function middleware(req: NextRequest) {
+    // 1) Always run intl middleware first (sets locale routing & redirects / -> /en or /ar)
+    const intlRes = intlMiddleware(req);
+
+    // 2) Refresh Supabase session cookies (important for login to "stick")
+    // updateSession expects a NextResponse to attach cookies to
+    const res = intlRes ?? NextResponse.next();
+    const { user } = await updateSession(req, res);
+
+    // 3) Minimal route protection (NO role checks here)
+    const pathnameNoLocale = stripLocale(req.nextUrl.pathname);
+
+    // allow public always
+    if (isPublicPath(pathnameNoLocale)) return res;
+
+    // protect specific prefixes only
+    if (isProtectedPath(pathnameNoLocale) && !user) {
+        const locale = req.nextUrl.pathname.split('/').filter(Boolean)[0];
+        const effectiveLocale = locale === 'en' || locale === 'ar' ? locale : routing.defaultLocale;
+
+        const url = req.nextUrl.clone();
+        url.pathname = `/${effectiveLocale}/login`;
+        url.searchParams.set('next', req.nextUrl.pathname);
+        return NextResponse.redirect(url);
+    }
+
+    return res;
+}
+
+// IMPORTANT: do NOT match static assets
 export const config = {
     matcher: [
-        /*
-         * Match all request paths except for the ones starting with:
-         * - _next/static (static files)
-         * - _next/image (image optimization files)
-         * - favicon.ico (favicon file)
-         * - public files (public folder)
-         */
-        '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-    ],
+        '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map)$).*)'
+    ]
 };
