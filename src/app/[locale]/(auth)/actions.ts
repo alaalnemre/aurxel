@@ -41,6 +41,24 @@ async function createAuthClient() {
     );
 }
 
+/**
+ * Get redirect path based on user role
+ */
+function getRoleRedirectPath(role: string | null | undefined, locale: string): string {
+    switch (role) {
+        case 'admin':
+            return `/${locale}/admin`;
+        case 'seller':
+            return `/${locale}/seller`;
+        case 'driver':
+            return `/${locale}/driver`;
+        case 'buyer':
+            return `/${locale}/buyer`;
+        default:
+            return `/${locale}/buyer`; // Default to buyer if role missing
+    }
+}
+
 export async function login(formData: FormData) {
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
@@ -64,22 +82,36 @@ export async function login(formData: FormData) {
 
     const supabase = await createAuthClient();
 
-    const { error } = await supabase.auth.signInWithPassword({
+    // Authenticate user
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
     });
 
-    if (error) {
-        return { error: error.message };
+    if (authError) {
+        return { error: authError.message };
     }
 
-    // Redirect to the original destination or buyer dashboard
-    // Use next/navigation redirect with full locale path
+    if (!authData.user) {
+        return { error: 'Authentication failed' };
+    }
+
+    // Fetch user role from profiles
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+
+    const userRole = profile?.role;
+
+    // Redirect to the original destination if provided
     if (redirectTo && redirectTo.startsWith('/')) {
         redirect(redirectTo);
     }
 
-    redirect(`/${locale}/buyer`);
+    // Redirect based on role
+    redirect(getRoleRedirectPath(userRole, locale));
 }
 
 export async function register(formData: FormData) {
@@ -110,7 +142,7 @@ export async function register(formData: FormData) {
 
     const supabase = await createAuthClient();
 
-    const { error } = await supabase.auth.signUp({
+    const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -121,13 +153,16 @@ export async function register(formData: FormData) {
         },
     });
 
-    if (error) {
-        return { error: error.message };
+    if (authError) {
+        return { error: authError.message };
     }
 
-    // Redirect based on role after successful registration
-    const dashboardPath = role === 'seller' ? '/seller' : '/buyer';
-    redirect(`/${locale}${dashboardPath}`);
+    if (!authData.user) {
+        return { error: 'Registration failed' };
+    }
+
+    // Redirect based on intended role
+    redirect(getRoleRedirectPath(role, locale));
 }
 
 export async function logout() {
