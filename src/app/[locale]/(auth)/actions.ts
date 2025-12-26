@@ -1,7 +1,8 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from '@/i18n/navigation';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { getLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { applyRateLimit, isRateLimitError, getRateLimitMessage } from '@/lib/security/rate-limit';
@@ -14,6 +15,30 @@ async function getClientIdentifier(): Promise<string> {
     const forwarded = headersList.get('x-forwarded-for');
     const ip = forwarded?.split(',')[0] || headersList.get('x-real-ip') || 'unknown';
     return ip;
+}
+
+/**
+ * Create Supabase client for auth actions with proper cookie handling
+ */
+async function createAuthClient() {
+    const cookieStore = await cookies();
+
+    return createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+            cookies: {
+                getAll() {
+                    return cookieStore.getAll();
+                },
+                setAll(cookiesToSet) {
+                    cookiesToSet.forEach(({ name, value, options }) => {
+                        cookieStore.set(name, value, options);
+                    });
+                },
+            },
+        }
+    );
 }
 
 export async function login(formData: FormData) {
@@ -37,7 +62,7 @@ export async function login(formData: FormData) {
         return { error: 'Email and password are required' };
     }
 
-    const supabase = await createClient();
+    const supabase = await createAuthClient();
 
     const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -49,11 +74,12 @@ export async function login(formData: FormData) {
     }
 
     // Redirect to the original destination or buyer dashboard
+    // Use next/navigation redirect with full locale path
     if (redirectTo && redirectTo.startsWith('/')) {
-        redirect({ href: redirectTo, locale });
+        redirect(redirectTo);
     }
 
-    redirect({ href: '/buyer', locale });
+    redirect(`/${locale}/buyer`);
 }
 
 export async function register(formData: FormData) {
@@ -82,7 +108,7 @@ export async function register(formData: FormData) {
         return { error: 'Password must be at least 8 characters' };
     }
 
-    const supabase = await createClient();
+    const supabase = await createAuthClient();
 
     const { error } = await supabase.auth.signUp({
         email,
@@ -101,14 +127,13 @@ export async function register(formData: FormData) {
 
     // Redirect based on role after successful registration
     const dashboardPath = role === 'seller' ? '/seller' : '/buyer';
-    redirect({ href: dashboardPath, locale });
+    redirect(`/${locale}${dashboardPath}`);
 }
 
 export async function logout() {
-    const supabase = await createClient();
+    const supabase = await createAuthClient();
     await supabase.auth.signOut();
 
     const locale = await getLocale();
-    redirect({ href: '/', locale });
+    redirect(`/${locale}`);
 }
-
