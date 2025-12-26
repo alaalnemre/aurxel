@@ -1,23 +1,29 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { Link } from '@/i18n/navigation';
 import { useState } from 'react';
-import { register } from '../actions';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { signUp } from '@/lib/actions/auth';
+
+type Role = 'buyer' | 'seller' | 'driver';
 
 export default function RegisterPage() {
-    const t = useTranslations();
+    const params = useParams();
+    const locale = params.locale as string;
+    const t = useTranslations('auth');
+    const tCommon = useTranslations('common');
+
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [selectedRole, setSelectedRole] = useState('buyer');
+    const [selectedRole, setSelectedRole] = useState<Role>('buyer');
 
     async function handleSubmit(formData: FormData) {
-        setError(null);
         setLoading(true);
+        setError(null);
 
         formData.set('role', selectedRole);
-
-        const result = await register(formData);
+        const result = await signUp(locale, formData);
 
         if (result?.error) {
             setError(result.error);
@@ -25,164 +31,143 @@ export default function RegisterPage() {
         }
     }
 
+    const roles: { value: Role; icon: string }[] = [
+        { value: 'buyer', icon: '🛒' },
+        { value: 'seller', icon: '🏪' },
+        { value: 'driver', icon: '🛵' },
+    ];
+
     return (
-        <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-800 flex items-center justify-center px-4 py-12">
-            <div className="w-full max-w-md">
+        <div className="min-h-screen flex items-center justify-center py-12 px-4">
+            {/* Background */}
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5" />
+
+            <div className="relative w-full max-w-md">
                 {/* Logo */}
                 <div className="text-center mb-8">
-                    <Link href="/" className="text-3xl font-bold text-white">
-                        {t('common.appName')}
+                    <Link href={`/${locale}`} className="inline-flex items-center gap-2">
+                        <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center">
+                            <span className="text-white font-bold text-2xl">J</span>
+                        </div>
+                        <span className="font-bold text-2xl">{tCommon('appName')}</span>
                     </Link>
                 </div>
 
-                {/* Register Card */}
-                <div className="bg-white rounded-2xl shadow-2xl p-8">
-                    <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                        {t('auth.register.title')}
-                    </h1>
-                    <p className="text-gray-600 mb-8">{t('auth.register.subtitle')}</p>
+                <div className="bg-card rounded-2xl p-8 shadow-card animate-fadeIn">
+                    <h1 className="text-2xl font-bold text-center mb-2">{t('registerTitle')}</h1>
+                    <p className="text-secondary text-center mb-6">{t('registerSubtitle')}</p>
 
                     {error && (
-                        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                        <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg mb-4">
                             {error}
                         </div>
                     )}
 
-                    <form action={handleSubmit} className="space-y-6">
+                    {/* Role Selection */}
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium mb-3">{t('selectRole')}</label>
+                        <div className="grid grid-cols-3 gap-3">
+                            {roles.map((role) => (
+                                <button
+                                    key={role.value}
+                                    type="button"
+                                    onClick={() => setSelectedRole(role.value)}
+                                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${selectedRole === role.value
+                                            ? 'border-primary bg-primary/5'
+                                            : 'border-border hover:border-primary/50'
+                                        }`}
+                                >
+                                    <span className="text-2xl">{role.icon}</span>
+                                    <span className="text-sm font-medium">{t(`${role.value}Role`)}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <form action={handleSubmit} className="space-y-4">
                         <div>
-                            <label
-                                htmlFor="fullName"
-                                className="block text-sm font-medium text-gray-700 mb-2"
-                            >
-                                {t('auth.register.fullName')}
+                            <label htmlFor="fullName" className="block text-sm font-medium mb-1.5">
+                                {t('fullName')}
                             </label>
                             <input
+                                type="text"
                                 id="fullName"
                                 name="fullName"
-                                type="text"
                                 required
-                                autoComplete="name"
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
-                                placeholder="John Doe"
+                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                             />
                         </div>
 
                         <div>
-                            <label
-                                htmlFor="email"
-                                className="block text-sm font-medium text-gray-700 mb-2"
-                            >
-                                {t('auth.register.email')}
+                            <label htmlFor="email" className="block text-sm font-medium mb-1.5">
+                                {t('email')}
                             </label>
                             <input
+                                type="email"
                                 id="email"
                                 name="email"
-                                type="email"
                                 required
-                                autoComplete="email"
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                                 placeholder="you@example.com"
                             />
                         </div>
 
                         <div>
-                            <label
-                                htmlFor="password"
-                                className="block text-sm font-medium text-gray-700 mb-2"
-                            >
-                                {t('auth.register.password')}
+                            <label htmlFor="phone" className="block text-sm font-medium mb-1.5">
+                                {t('phone')}
                             </label>
                             <input
+                                type="tel"
+                                id="phone"
+                                name="phone"
+                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                                placeholder="+962 7X XXX XXXX"
+                            />
+                        </div>
+
+                        <div>
+                            <label htmlFor="password" className="block text-sm font-medium mb-1.5">
+                                {t('password')}
+                            </label>
+                            <input
+                                type="password"
                                 id="password"
                                 name="password"
-                                type="password"
                                 required
-                                autoComplete="new-password"
-                                minLength={8}
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                                minLength={6}
+                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                                 placeholder="••••••••"
                             />
                         </div>
 
-                        {/* Role Selection */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-3">
-                                {t('auth.register.role')}
+                            <label htmlFor="confirmPassword" className="block text-sm font-medium mb-1.5">
+                                {t('confirmPassword')}
                             </label>
-                            <div className="grid grid-cols-2 gap-4">
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectedRole('buyer')}
-                                    className={`p-4 border-2 rounded-lg text-center transition-all ${selectedRole === 'buyer'
-                                            ? 'border-indigo-600 bg-indigo-50 text-indigo-600'
-                                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                                        }`}
-                                >
-                                    <svg
-                                        className="w-8 h-8 mx-auto mb-2"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
-                                        />
-                                    </svg>
-                                    <span className="font-medium">
-                                        {t('auth.register.roleBuyer')}
-                                    </span>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectedRole('seller')}
-                                    className={`p-4 border-2 rounded-lg text-center transition-all ${selectedRole === 'seller'
-                                            ? 'border-indigo-600 bg-indigo-50 text-indigo-600'
-                                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                                        }`}
-                                >
-                                    <svg
-                                        className="w-8 h-8 mx-auto mb-2"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                                        />
-                                    </svg>
-                                    <span className="font-medium">
-                                        {t('auth.register.roleSeller')}
-                                    </span>
-                                </button>
-                            </div>
+                            <input
+                                type="password"
+                                id="confirmPassword"
+                                name="confirmPassword"
+                                required
+                                minLength={6}
+                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                                placeholder="••••••••"
+                            />
                         </div>
 
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full py-3 px-4 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full py-3 px-4 bg-primary hover:bg-primary-dark text-white font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            {loading ? t('common.loading') : t('auth.register.submit')}
+                            {loading ? tCommon('loading') : t('signUp')}
                         </button>
-
-                        <p className="text-xs text-gray-500 text-center">
-                            {t('auth.register.terms')}
-                        </p>
                     </form>
 
-                    <div className="mt-8 text-center text-sm text-gray-600">
-                        {t('auth.register.hasAccount')}{' '}
-                        <Link
-                            href="/login"
-                            className="text-indigo-600 font-semibold hover:text-indigo-500"
-                        >
-                            {t('auth.register.login')}
+                    <div className="mt-6 text-center text-sm text-secondary">
+                        {t('hasAccount')}{' '}
+                        <Link href={`/${locale}/login`} className="text-primary font-medium hover:underline">
+                            {t('signIn')}
                         </Link>
                     </div>
                 </div>

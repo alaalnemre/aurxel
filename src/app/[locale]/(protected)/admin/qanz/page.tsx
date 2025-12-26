@@ -1,116 +1,141 @@
+'use client';
+
+import { useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { setRequestLocale } from 'next-intl/server';
-import { Link } from '@/i18n/navigation';
-import { getQanzStats, getOutstandingLiability } from '@/lib/qanz/actions';
-import { GenerateCodesForm } from '@/components/admin/GenerateCodesForm';
+import { generateTopupCodes } from '@/lib/actions/admin';
 
-// Force Node.js runtime
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export default function AdminQanzPage() {
+    const params = useParams();
+    const router = useRouter();
+    const locale = params.locale as string;
+    const t = useTranslations('admin');
 
-export default async function AdminQanzPage({
-    params,
-}: {
-    params: Promise<{ locale: string }>;
-}) {
-    const { locale } = await params;
-    setRequestLocale(locale);
+    const [amount, setAmount] = useState('10');
+    const [count, setCount] = useState('1');
+    const [loading, setLoading] = useState(false);
+    const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
+    const [error, setError] = useState<string | null>(null);
 
-    const [stats, liability] = await Promise.all([
-        getQanzStats(),
-        getOutstandingLiability(),
-    ]);
+    async function handleGenerate() {
+        setLoading(true);
+        setError(null);
 
-    return <AdminQanzContent stats={stats} liability={liability} locale={locale} />;
-}
+        const result = await generateTopupCodes(
+            parseFloat(amount),
+            parseInt(count)
+        );
 
-function AdminQanzContent({
-    stats,
-    liability,
-    locale,
-}: {
-    stats: Awaited<ReturnType<typeof getQanzStats>>;
-    liability: number;
-    locale: string;
-}) {
-    const t = useTranslations();
+        if (result.error) {
+            setError(result.error);
+        } else {
+            setGeneratedCodes(result.codes || []);
+        }
+        setLoading(false);
+    }
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">{t('qanz.adminTitle')}</h1>
-                    <p className="mt-1 text-sm text-gray-500">{t('qanz.adminDescription')}</p>
+        <div className="max-w-2xl mx-auto space-y-6 animate-fadeIn">
+            <h1 className="text-2xl font-bold">{t('qanzControl')}</h1>
+
+            {/* Generator */}
+            <div className="bg-card rounded-2xl p-6 shadow-card">
+                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <span>💎</span>
+                    {locale === 'ar' ? 'توليد أكواد QANZ' : 'Generate QANZ Codes'}
+                </h2>
+
+                {error && (
+                    <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg mb-4">
+                        {error}
+                    </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label className="block text-sm font-medium mb-1.5">
+                            {locale === 'ar' ? 'قيمة الكود (JOD)' : 'Code Value (JOD)'}
+                        </label>
+                        <select
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
+                            className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary outline-none"
+                        >
+                            <option value="5">5 JOD</option>
+                            <option value="10">10 JOD</option>
+                            <option value="20">20 JOD</option>
+                            <option value="50">50 JOD</option>
+                            <option value="100">100 JOD</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1.5">
+                            {locale === 'ar' ? 'عدد الأكواد' : 'Number of Codes'}
+                        </label>
+                        <select
+                            value={count}
+                            onChange={(e) => setCount(e.target.value)}
+                            className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary outline-none"
+                        >
+                            <option value="1">1</option>
+                            <option value="5">5</option>
+                            <option value="10">10</option>
+                            <option value="20">20</option>
+                        </select>
+                    </div>
                 </div>
-                <Link
-                    href="/admin/qanz/codes"
-                    className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700"
+
+                <button
+                    onClick={handleGenerate}
+                    disabled={loading}
+                    className="w-full py-3 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-colors disabled:opacity-50"
                 >
-                    {t('qanz.viewAllCodes')}
-                </Link>
+                    {loading
+                        ? (locale === 'ar' ? 'جاري التوليد...' : 'Generating...')
+                        : (locale === 'ar' ? 'توليد الأكواد' : 'Generate Codes')}
+                </button>
             </div>
 
-            {/* Stats Cards */}
-            {stats && (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                        <div className="text-sm text-gray-500">{t('qanz.totalCodes')}</div>
-                        <div className="text-2xl font-bold text-gray-900">
-                            {stats.totalCodesGenerated}
-                        </div>
+            {/* Generated Codes */}
+            {generatedCodes.length > 0 && (
+                <div className="bg-card rounded-2xl p-6 shadow-card">
+                    <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <span>✅</span>
+                        {locale === 'ar' ? 'الأكواد المُولدة' : 'Generated Codes'}
+                    </h2>
+                    <div className="space-y-2">
+                        {generatedCodes.map((code, idx) => (
+                            <div
+                                key={idx}
+                                className="flex items-center justify-between bg-muted/50 rounded-lg px-4 py-3"
+                            >
+                                <code className="font-mono text-lg font-bold text-primary">
+                                    {code}
+                                </code>
+                                <button
+                                    onClick={() => navigator.clipboard.writeText(code)}
+                                    className="text-sm text-secondary hover:text-primary"
+                                >
+                                    {locale === 'ar' ? 'نسخ' : 'Copy'}
+                                </button>
+                            </div>
+                        ))}
                     </div>
-                    <div className="bg-white rounded-xl shadow-sm border border-green-200 p-4">
-                        <div className="text-sm text-gray-500">{t('qanz.activeCodes')}</div>
-                        <div className="text-2xl font-bold text-green-600">
-                            {stats.activeCodes}
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-xl shadow-sm border border-blue-200 p-4">
-                        <div className="text-sm text-gray-500">{t('qanz.redeemedCodes')}</div>
-                        <div className="text-2xl font-bold text-blue-600">
-                            {stats.redeemedCodes}
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-xl shadow-sm border border-red-200 p-4">
-                        <div className="text-sm text-gray-500">{t('qanz.voidedCodes')}</div>
-                        <div className="text-2xl font-bold text-red-600">
-                            {stats.voidedCodes}
-                        </div>
-                    </div>
+                    <p className="text-xs text-secondary mt-4 text-center">
+                        {locale === 'ar'
+                            ? `قيمة كل كود: ${amount} JOD`
+                            : `Each code is worth ${amount} JOD`}
+                    </p>
                 </div>
             )}
 
-            {/* Financial Stats */}
-            {stats && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white rounded-xl shadow-sm border border-yellow-200 p-4">
-                        <div className="text-sm text-gray-500">{t('qanz.outstandingLiability')}</div>
-                        <div className="text-2xl font-bold text-yellow-600">
-                            {liability.toFixed(2)} QANZ
-                        </div>
-                        <p className="text-xs text-gray-400 mt-1">{t('qanz.liabilityNote')}</p>
-                    </div>
-                    <div className="bg-white rounded-xl shadow-sm border border-indigo-200 p-4">
-                        <div className="text-sm text-gray-500">{t('qanz.totalRedeemed')}</div>
-                        <div className="text-2xl font-bold text-indigo-600">
-                            {stats.totalRedeemed.toFixed(2)} QANZ
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-xl shadow-sm border border-purple-200 p-4">
-                        <div className="text-sm text-gray-500">{t('qanz.inCirculation')}</div>
-                        <div className="text-2xl font-bold text-purple-600">
-                            {stats.totalInCirculation.toFixed(2)} QANZ
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Generate Codes Form */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                    {t('qanz.generateCodes')}
-                </h2>
-                <GenerateCodesForm />
+            {/* Info */}
+            <div className="bg-muted/30 rounded-xl p-4 text-sm text-secondary">
+                <p>
+                    {locale === 'ar'
+                        ? 'الأكواد المُولدة تصلح للاستخدام مرة واحدة فقط. بعد استخدام الكود، يتم إضافة القيمة لمحفظة QANZ الخاصة بالمستخدم.'
+                        : 'Generated codes are single-use only. Once redeemed, the value is added to the user\'s QANZ wallet.'}
+                </p>
             </div>
         </div>
     );

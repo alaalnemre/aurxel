@@ -1,191 +1,246 @@
-import { useTranslations } from 'next-intl';
+import { createClient } from '@/lib/supabase/server';
 import { setRequestLocale } from 'next-intl/server';
+import { getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
-import { Link } from '@/i18n/navigation';
-import { getBuyerOrder } from '@/lib/orders/actions';
+import Link from 'next/link';
+import Image from 'next/image';
 
-// Force Node.js runtime
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
-export default async function BuyerOrderDetailPage({
+export default async function OrderDetailPage({
     params,
 }: {
     params: Promise<{ locale: string; id: string }>;
 }) {
     const { locale, id } = await params;
     setRequestLocale(locale);
+    const t = await getTranslations('order');
+    const tStatus = await getTranslations('order.status');
 
-    const order = await getBuyerOrder(id);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    const { data: order } = await supabase
+        .from('orders')
+        .select(`
+      *,
+      items:order_items(
+        id,
+        quantity,
+        unit_price,
+        product:products(id, name_en, name_ar, images)
+      ),
+      delivery:deliveries(*)
+    `)
+        .eq('id', id)
+        .eq('buyer_id', user?.id)
+        .maybeSingle();
 
     if (!order) {
         notFound();
     }
 
-    return <OrderDetailContent order={order} locale={locale} />;
-}
-
-function OrderDetailContent({
-    order,
-    locale,
-}: {
-    order: NonNullable<Awaited<ReturnType<typeof getBuyerOrder>>>;
-    locale: string;
-}) {
-    const t = useTranslations();
-
-    const statusColors: Record<string, string> = {
-        placed: 'bg-blue-100 text-blue-700',
-        accepted: 'bg-indigo-100 text-indigo-700',
-        preparing: 'bg-yellow-100 text-yellow-700',
-        ready_for_pickup: 'bg-purple-100 text-purple-700',
-        assigned: 'bg-cyan-100 text-cyan-700',
-        picked_up: 'bg-orange-100 text-orange-700',
-        delivered: 'bg-green-100 text-green-700',
-        cancelled: 'bg-red-100 text-red-700',
-    };
-
     const statusSteps = [
-        'placed',
-        'accepted',
-        'preparing',
-        'ready_for_pickup',
-        'assigned',
-        'picked_up',
-        'delivered',
+        { key: 'placed', icon: '📝', label: tStatus('placed') },
+        { key: 'accepted', icon: '✅', label: tStatus('accepted') },
+        { key: 'preparing', icon: '👨‍🍳', label: tStatus('preparing') },
+        { key: 'ready', icon: '📦', label: tStatus('ready') },
+        { key: 'picked_up', icon: '🛵', label: tStatus('pickedUp') },
+        { key: 'delivered', icon: '🎉', label: tStatus('delivered') },
     ];
 
-    const currentStepIndex = statusSteps.indexOf(order.status);
+    const currentIndex = statusSteps.findIndex((s) => s.key === order.status);
+    const isCancelled = order.status === 'cancelled';
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 animate-fadeIn">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
                     <Link
-                        href="/buyer/orders"
-                        className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1 mb-2"
+                        href={`/${locale}/buyer/orders`}
+                        className="text-sm text-secondary hover:text-primary flex items-center gap-1 mb-2"
                     >
-                        ← {t('common.back')}
+                        <svg className="w-4 h-4 rtl:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        {locale === 'ar' ? 'رجوع للطلبات' : 'Back to Orders'}
                     </Link>
-                    <h1 className="text-2xl font-bold text-gray-900">
-                        {t('orders.orderId')}: #{order.id.slice(0, 8).toUpperCase()}
-                    </h1>
-                    <p className="text-sm text-gray-500">
-                        {new Date(order.created_at).toLocaleString(locale)}
-                    </p>
+                    <h1 className="text-2xl font-bold">{t('details')}</h1>
+                    <p className="text-secondary font-mono">#{order.id.slice(0, 8)}</p>
                 </div>
-                <span className={`px-4 py-2 text-sm font-medium rounded-full ${statusColors[order.status]}`}>
-                    {t(`orders.status.${order.status}`)}
-                </span>
+                <StatusBadge status={order.status} t={tStatus} />
             </div>
 
-            {/* Status Progress */}
-            {order.status !== 'cancelled' && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                        {t('orders.orderProgress')}
-                    </h2>
-                    <div className="flex items-center">
-                        {statusSteps.slice(0, -1).map((step, index) => (
-                            <div key={step} className="flex-1 flex items-center">
-                                <div
-                                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${index <= currentStepIndex
-                                            ? 'bg-indigo-600 text-white'
-                                            : 'bg-gray-200 text-gray-500'
-                                        }`}
-                                >
-                                    {index < currentStepIndex ? '✓' : index + 1}
-                                </div>
-                                {index < statusSteps.length - 2 && (
-                                    <div
-                                        className={`flex-1 h-1 mx-2 ${index < currentStepIndex ? 'bg-indigo-600' : 'bg-gray-200'
-                                            }`}
-                                    />
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                    <div className="flex mt-2">
-                        {statusSteps.slice(0, -1).map((step) => (
-                            <div key={step} className="flex-1 text-xs text-center text-gray-500">
-                                {t(`orders.status.${step}`)}
-                            </div>
-                        ))}
+            {/* Timeline */}
+            {!isCancelled && (
+                <div className="bg-card rounded-2xl p-6 shadow-card">
+                    <h2 className="text-lg font-semibold mb-6">{t('timeline')}</h2>
+                    <div className="relative">
+                        <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-muted" />
+                        <div className="space-y-6">
+                            {statusSteps.map((step, idx) => {
+                                const isCompleted = idx <= currentIndex;
+                                const isCurrent = idx === currentIndex;
+                                return (
+                                    <div key={step.key} className="relative flex items-start gap-4">
+                                        <div
+                                            className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-lg ${isCompleted
+                                                    ? 'bg-primary text-white'
+                                                    : 'bg-muted text-secondary'
+                                                } ${isCurrent ? 'ring-4 ring-primary/20' : ''}`}
+                                        >
+                                            {step.icon}
+                                        </div>
+                                        <div className="flex-1 pt-1">
+                                            <p className={`font-medium ${isCompleted ? '' : 'text-secondary'}`}>
+                                                {step.label}
+                                            </p>
+                                            {isCurrent && (
+                                                <p className="text-sm text-primary">
+                                                    {locale === 'ar' ? 'الحالة الحالية' : 'Current Status'}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                 </div>
             )}
 
+            {isCancelled && (
+                <div className="bg-error/10 border border-error/20 rounded-2xl p-6 text-center">
+                    <span className="text-4xl mb-2 block">❌</span>
+                    <p className="text-error font-semibold">{tStatus('cancelled')}</p>
+                </div>
+            )}
+
             {/* Order Items */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                    {t('orders.orderItems')}
-                </h2>
-                <div className="divide-y divide-gray-200">
-                    {order.items?.map((item) => (
-                        <div key={item.id} className="py-4 flex items-center justify-between">
-                            <div>
-                                <p className="font-medium text-gray-900">
-                                    {locale === 'ar' && item.product_name_ar
-                                        ? item.product_name_ar
-                                        : item.product_name}
-                                </p>
-                                <p className="text-sm text-gray-500">
-                                    {item.quantity} × {item.unit_price.toFixed(2)} JOD
+            <div className="bg-card rounded-2xl p-6 shadow-card">
+                <h2 className="text-lg font-semibold mb-4">{t('items')}</h2>
+                <div className="space-y-4">
+                    {order.items?.map((item: {
+                        id: string;
+                        quantity: number;
+                        unit_price: number;
+                        product: { id: string; name_en: string; name_ar: string; images: string[] } | { id: string; name_en: string; name_ar: string; images: string[] }[] | null;
+                    }) => {
+                        const product = Array.isArray(item.product) ? item.product[0] : item.product;
+                        if (!product) return null;
+
+                        return (
+                            <div key={item.id} className="flex gap-4">
+                                <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-muted flex-shrink-0">
+                                    {product.images?.[0] ? (
+                                        <Image
+                                            src={product.images[0]}
+                                            alt={locale === 'ar' ? product.name_ar : product.name_en}
+                                            fill
+                                            className="object-cover"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-xl">
+                                            📦
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex-1">
+                                    <p className="font-medium">
+                                        {locale === 'ar' ? product.name_ar : product.name_en}
+                                    </p>
+                                    <p className="text-sm text-secondary">
+                                        {item.quantity} × {Number(item.unit_price).toFixed(2)} JOD
+                                    </p>
+                                </div>
+                                <p className="font-semibold">
+                                    {(item.quantity * Number(item.unit_price)).toFixed(2)} JOD
                                 </p>
                             </div>
-                            <p className="font-semibold text-gray-900">
-                                {item.total_price.toFixed(2)} JOD
-                            </p>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
-                <div className="border-t border-gray-200 pt-4 mt-4">
-                    <div className="flex justify-between text-lg font-bold">
-                        <span>{t('orders.total')}</span>
-                        <span className="text-indigo-600">{order.total_amount.toFixed(2)} JOD</span>
+
+                {/* Totals */}
+                <div className="border-t border-border mt-4 pt-4 space-y-2">
+                    <div className="flex justify-between text-sm">
+                        <span className="text-secondary">
+                            {locale === 'ar' ? 'المجموع الفرعي' : 'Subtotal'}
+                        </span>
+                        <span>{Number(order.total_amount).toFixed(2)} JOD</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                        <span className="text-secondary">
+                            {locale === 'ar' ? 'التوصيل' : 'Delivery'}
+                        </span>
+                        <span>{Number(order.delivery_fee).toFixed(2)} JOD</span>
+                    </div>
+                    <div className="flex justify-between font-bold pt-2 border-t border-border">
+                        <span>{locale === 'ar' ? 'الإجمالي' : 'Total'}</span>
+                        <span className="text-primary">
+                            {(Number(order.total_amount) + Number(order.delivery_fee)).toFixed(2)} JOD
+                        </span>
                     </div>
                 </div>
             </div>
 
             {/* Delivery Info */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                    {t('orders.deliveryInfo')}
+            <div className="bg-card rounded-2xl p-6 shadow-card">
+                <h2 className="text-lg font-semibold mb-4">
+                    {locale === 'ar' ? 'معلومات التوصيل' : 'Delivery Info'}
                 </h2>
                 <div className="space-y-3">
-                    <div>
-                        <p className="text-sm text-gray-500">{t('checkout.address')}</p>
-                        <p className="text-gray-900">{order.delivery_address || '-'}</p>
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-500">{t('checkout.phone')}</p>
-                        <p className="text-gray-900">{order.delivery_phone || '-'}</p>
-                    </div>
-                    {order.delivery_notes && (
+                    <div className="flex items-start gap-3">
+                        <span className="text-xl">📍</span>
                         <div>
-                            <p className="text-sm text-gray-500">{t('checkout.notes')}</p>
-                            <p className="text-gray-900">{order.delivery_notes}</p>
+                            <p className="font-medium">
+                                {locale === 'ar' ? 'العنوان' : 'Address'}
+                            </p>
+                            <p className="text-secondary">{order.delivery_address}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                        <span className="text-xl">📱</span>
+                        <div>
+                            <p className="font-medium">
+                                {locale === 'ar' ? 'رقم الهاتف' : 'Phone'}
+                            </p>
+                            <p className="text-secondary">{order.delivery_phone}</p>
+                        </div>
+                    </div>
+                    {order.notes && (
+                        <div className="flex items-start gap-3">
+                            <span className="text-xl">📝</span>
+                            <div>
+                                <p className="font-medium">
+                                    {locale === 'ar' ? 'ملاحظات' : 'Notes'}
+                                </p>
+                                <p className="text-secondary">{order.notes}</p>
+                            </div>
                         </div>
                     )}
                 </div>
             </div>
-
-            {/* Payment */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                    {t('checkout.paymentMethod')}
-                </h2>
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                        💵
-                    </div>
-                    <div>
-                        <p className="font-medium text-gray-900">{t('checkout.cod')}</p>
-                        <p className="text-sm text-gray-500">{t('checkout.codDescription')}</p>
-                    </div>
-                </div>
-            </div>
         </div>
+    );
+}
+
+function StatusBadge({ status, t }: { status: string; t: (key: string) => string }) {
+    const statusColors: Record<string, string> = {
+        placed: 'bg-blue-100 text-blue-700',
+        accepted: 'bg-purple-100 text-purple-700',
+        preparing: 'bg-yellow-100 text-yellow-700',
+        ready: 'bg-orange-100 text-orange-700',
+        assigned: 'bg-indigo-100 text-indigo-700',
+        picked_up: 'bg-cyan-100 text-cyan-700',
+        delivered: 'bg-green-100 text-green-700',
+        cancelled: 'bg-red-100 text-red-700',
+    };
+
+    const statusKey = status.replace('_', '');
+
+    return (
+        <span className={`text-sm px-3 py-1.5 rounded-full font-medium ${statusColors[status] || 'bg-gray-100'}`}>
+            {t(statusKey)}
+        </span>
     );
 }

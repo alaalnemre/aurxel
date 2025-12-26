@@ -1,15 +1,7 @@
-import { useTranslations } from 'next-intl';
-import { setRequestLocale } from 'next-intl/server';
 import { createClient } from '@/lib/supabase/server';
-import { Link } from '@/i18n/navigation';
-import { LogoutButton } from '@/components/LogoutButton';
-import { getQanzBalance } from '@/lib/qanz/actions';
-import { getUnreadCount } from '@/lib/notifications/actions';
-import { NotificationBell } from '@/components/notifications/NotificationBell';
-
-// Force Node.js runtime
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+import { setRequestLocale } from 'next-intl/server';
+import { getTranslations } from 'next-intl/server';
+import Link from 'next/link';
 
 export default async function DriverDashboard({
     params,
@@ -18,180 +10,218 @@ export default async function DriverDashboard({
 }) {
     const { locale } = await params;
     setRequestLocale(locale);
+    const t = await getTranslations('driver');
 
     const supabase = await createClient();
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    const [balance, unreadCount] = await Promise.all([
-        getQanzBalance(),
-        getUnreadCount(),
-    ]);
+    // Fetch driver profile
+    const { data: driverProfile } = await supabase
+        .from('driver_profiles')
+        .select('*')
+        .eq('id', user?.id)
+        .maybeSingle();
 
-    return <DriverDashboardContent user={user} balance={balance} unreadCount={unreadCount} />;
-}
+    // Fetch stats
+    const { count: availableDeliveries } = await supabase
+        .from('deliveries')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'available');
 
-function DriverDashboardContent({ user, balance, unreadCount }: { user: { email?: string } | null; balance: number; unreadCount: number }) {
-    const t = useTranslations();
+    const { count: activeDeliveries } = await supabase
+        .from('deliveries')
+        .select('*', { count: 'exact', head: true })
+        .eq('driver_id', user?.id)
+        .in('status', ['assigned', 'picked_up']);
+
+    const { data: completedDeliveries } = await supabase
+        .from('deliveries')
+        .select('cash_collected')
+        .eq('driver_id', user?.id)
+        .eq('status', 'delivered');
+
+    const totalCashCollected = completedDeliveries?.reduce(
+        (sum, d) => sum + (Number(d.cash_collected) || 0),
+        0
+    ) || 0;
+
+    // Today's earnings
+    const today = new Date().toISOString().split('T')[0];
+    const { data: todayDeliveries } = await supabase
+        .from('deliveries')
+        .select('cash_collected, delivered_at')
+        .eq('driver_id', user?.id)
+        .eq('status', 'delivered')
+        .gte('delivered_at', today);
+
+    const todayEarnings = todayDeliveries?.reduce(
+        (sum, d) => sum + (Number(d.cash_collected) || 0),
+        0
+    ) || 0;
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Header */}
-            <header className="bg-white shadow-sm border-b border-gray-200">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex items-center justify-between h-16">
-                        <div className="flex items-center">
-                            <Link href="/" className="text-xl font-bold text-indigo-600">
-                                {t('common.appName')}
-                            </Link>
-                            <span className="ml-4 px-3 py-1 text-xs font-medium bg-orange-100 text-orange-600 rounded-full">
-                                Driver
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <NotificationBell initialCount={unreadCount} />
-                            <Link
-                                href="/wallet"
-                                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100"
-                            >
-                                💳 {balance.toFixed(0)} QANZ
-                            </Link>
-                            <span className="text-sm text-gray-600">{user?.email}</span>
-                            <LogoutButton />
-                        </div>
+        <div className="space-y-6 animate-fadeIn">
+            <div className="flex items-center justify-between">
+                <h1 className="text-2xl font-bold">{t('dashboard')}</h1>
+                {!driverProfile?.is_verified && (
+                    <div className="px-3 py-1.5 bg-warning/10 text-warning text-sm rounded-full">
+                        ⏳ {locale === 'ar' ? 'بانتظار التوثيق' : 'Pending Verification'}
                     </div>
-                </div>
-            </header>
-
-            {/* Main Content */}
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <div className="mb-8 flex items-center justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900">
-                            {t('dashboard.driver.title')}
-                        </h1>
-                        <p className="mt-2 text-gray-600">{t('dashboard.driver.welcome')}</p>
-                    </div>
-                    {/* Status Toggle */}
-                    <div className="flex items-center gap-3 bg-white rounded-lg px-4 py-2 shadow-sm border border-gray-200">
-                        <span className="text-sm text-gray-600">
-                            {t('dashboard.driver.status')}:
+                )}
+                {driverProfile?.is_verified && (
+                    <div className="flex items-center gap-2">
+                        <span className={`w-3 h-3 rounded-full ${driverProfile.is_active ? 'bg-success' : 'bg-secondary'}`} />
+                        <span className="text-sm">
+                            {driverProfile.is_active
+                                ? (locale === 'ar' ? 'متاح' : 'Online')
+                                : (locale === 'ar' ? 'غير متاح' : 'Offline')}
                         </span>
-                        <button className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-full font-medium text-sm">
-                            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                            {t('dashboard.driver.online')}
+                    </div>
+                )}
+            </div>
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <KPICard
+                    icon="🚚"
+                    label={t('availableDeliveries')}
+                    value={String(availableDeliveries || 0)}
+                    color="primary"
+                    href={`/${locale}/driver/deliveries`}
+                />
+                <KPICard
+                    icon="📦"
+                    label={t('activeDeliveries')}
+                    value={String(activeDeliveries || 0)}
+                    color="warning"
+                />
+                <KPICard
+                    icon="💵"
+                    label={t('todayEarnings')}
+                    value={`${todayEarnings.toFixed(2)} JOD`}
+                    color="success"
+                />
+                <KPICard
+                    icon="💰"
+                    label={t('cashCollected')}
+                    value={`${totalCashCollected.toFixed(2)} JOD`}
+                    color="accent"
+                />
+            </div>
+
+            {/* Quick Actions */}
+            <div className="grid grid-cols-2 gap-4">
+                <Link
+                    href={`/${locale}/driver/deliveries`}
+                    className="bg-card rounded-xl p-6 shadow-card hover:shadow-card-hover transition-all text-center group"
+                >
+                    <div className="text-4xl mb-3 group-hover:scale-110 transition-transform">📦</div>
+                    <span className="font-medium text-lg">{t('availableDeliveries')}</span>
+                    {availableDeliveries && availableDeliveries > 0 && (
+                        <span className="block text-sm text-primary mt-1">
+                            {availableDeliveries} {locale === 'ar' ? 'متاحة' : 'available'}
+                        </span>
+                    )}
+                </Link>
+                <Link
+                    href={`/${locale}/driver/earnings`}
+                    className="bg-card rounded-xl p-6 shadow-card hover:shadow-card-hover transition-all text-center group"
+                >
+                    <div className="text-4xl mb-3 group-hover:scale-110 transition-transform">💳</div>
+                    <span className="font-medium text-lg">{t('earnings')}</span>
+                </Link>
+            </div>
+
+            {/* Driver Status Toggle */}
+            {driverProfile?.is_verified && (
+                <div className="bg-card rounded-2xl p-6 shadow-card">
+                    <h2 className="text-lg font-semibold mb-4">
+                        {locale === 'ar' ? 'حالة التوفر' : 'Availability Status'}
+                    </h2>
+                    <div className="flex items-center gap-4">
+                        <button
+                            className={`flex-1 py-3 rounded-xl font-medium transition-all ${driverProfile.is_active
+                                    ? 'bg-success text-white'
+                                    : 'bg-muted text-secondary hover:bg-success/10 hover:text-success'
+                                }`}
+                        >
+                            {locale === 'ar' ? 'متاح للتوصيل' : 'Available'}
+                        </button>
+                        <button
+                            className={`flex-1 py-3 rounded-xl font-medium transition-all ${!driverProfile.is_active
+                                    ? 'bg-secondary text-white'
+                                    : 'bg-muted text-secondary hover:bg-muted'
+                                }`}
+                        >
+                            {locale === 'ar' ? 'غير متاح' : 'Offline'}
                         </button>
                     </div>
                 </div>
+            )}
 
-                {/* Dashboard Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {/* Active Deliveries Card */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-semibold text-gray-900">
-                                {t('dashboard.driver.activeDeliveries')}
-                            </h2>
-                            <svg
-                                className="w-6 h-6 text-orange-500"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M13 10V3L4 14h7v7l9-11h-7z"
-                                />
-                            </svg>
-                        </div>
-                        <p className="text-3xl font-bold text-gray-900">0</p>
-                        <p className="text-gray-500 text-sm mt-1">
-                            {t('dashboard.driver.noDeliveries')}
-                        </p>
-                    </div>
-
-                    {/* Completed Deliveries Card */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-semibold text-gray-900">
-                                {t('dashboard.driver.completedDeliveries')}
-                            </h2>
-                            <svg
-                                className="w-6 h-6 text-green-500"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                                />
-                            </svg>
-                        </div>
-                        <p className="text-3xl font-bold text-gray-900">0</p>
-                        <p className="text-gray-500 text-sm mt-1">today</p>
-                    </div>
-
-                    {/* Earnings Card */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-semibold text-gray-900">
-                                {t('dashboard.driver.earnings')}
-                            </h2>
-                            <svg
-                                className="w-6 h-6 text-indigo-500"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                />
-                            </svg>
-                        </div>
-                        <p className="text-3xl font-bold text-gray-900">
-                            0 <span className="text-lg font-normal text-gray-500">JOD</span>
-                        </p>
-                        <p className="text-gray-500 text-sm mt-1">this week</p>
-                    </div>
-                </div>
-
-                {/* Available Deliveries Section */}
-                <div className="mt-8">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                        Available Deliveries
+            {/* Upload Documents if not verified */}
+            {!driverProfile?.is_verified && (
+                <div className="bg-card rounded-2xl p-6 shadow-card">
+                    <h2 className="text-lg font-semibold mb-2">
+                        {locale === 'ar' ? 'أكمل ملفك' : 'Complete Your Profile'}
                     </h2>
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-                        <svg
-                            className="w-16 h-16 text-gray-300 mx-auto mb-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                            />
-                        </svg>
-                        <p className="text-gray-500">
-                            No deliveries available at the moment
-                        </p>
-                        <p className="text-gray-400 text-sm mt-1">
-                            New deliveries will appear here when sellers mark orders as ready
-                        </p>
+                    <p className="text-secondary mb-4">
+                        {locale === 'ar'
+                            ? 'ارفع وثائق الهوية للتحقق وبدء استلام التوصيلات'
+                            : 'Upload ID documents to get verified and start receiving deliveries'}
+                    </p>
+                    <div className="bg-muted/50 rounded-lg p-4">
+                        <input
+                            type="file"
+                            accept="image/*,.pdf"
+                            className="text-sm text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary/10 file:text-primary file:font-medium hover:file:bg-primary/20"
+                        />
                     </div>
                 </div>
-            </main>
+            )}
         </div>
     );
+}
+
+function KPICard({
+    icon,
+    label,
+    value,
+    color,
+    href,
+}: {
+    icon: string;
+    label: string;
+    value: string;
+    color: 'primary' | 'accent' | 'warning' | 'success';
+    href?: string;
+}) {
+    const colorClasses = {
+        primary: 'bg-primary/10 text-primary',
+        accent: 'bg-accent/10 text-accent',
+        warning: 'bg-warning/10 text-warning',
+        success: 'bg-success/10 text-success',
+    };
+
+    const content = (
+        <>
+            <div className="flex items-center gap-3 mb-3">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colorClasses[color]}`}>
+                    <span className="text-lg">{icon}</span>
+                </div>
+                <span className="text-sm text-secondary">{label}</span>
+            </div>
+            <p className="text-2xl font-bold">{value}</p>
+        </>
+    );
+
+    if (href) {
+        return (
+            <Link href={href} className="bg-card rounded-2xl p-5 shadow-card hover:shadow-card-hover transition-all">
+                {content}
+            </Link>
+        );
+    }
+
+    return <div className="bg-card rounded-2xl p-5 shadow-card">{content}</div>;
 }

@@ -1,22 +1,39 @@
-import { redirect } from '@/i18n/navigation';
-import { getLocale } from 'next-intl/server';
-import { authorize } from '@/lib/auth/authorize';
-
-// Force Node.js runtime
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
+import { setRequestLocale } from 'next-intl/server';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
 
 export default async function BuyerLayout({
     children,
+    params,
 }: {
     children: React.ReactNode;
+    params: Promise<{ locale: string }>;
 }) {
-    const locale = await getLocale();
-    const result = await authorize({ requiredRole: 'buyer', locale });
+    const { locale } = await params;
+    setRequestLocale(locale);
 
-    if (!result.authorized && result.redirectTo) {
-        redirect({ href: result.redirectTo.replace(`/${locale}`, ''), locale });
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        redirect(`/${locale}/login`);
     }
 
-    return <>{children}</>;
+    // Verify user is a buyer
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, full_name')
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (profile?.role && profile.role !== 'buyer') {
+        redirect(`/${locale}/${profile.role}`);
+    }
+
+    return (
+        <DashboardLayout role="buyer" userName={profile?.full_name}>
+            {children}
+        </DashboardLayout>
+    );
 }

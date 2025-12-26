@@ -1,257 +1,289 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { Link } from '@/i18n/navigation';
 import { useState } from 'react';
-import { useCart } from '@/lib/cart/CartContext';
-import { createOrder } from '@/lib/orders/actions';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import Link from 'next/link';
+import Image from 'next/image';
+import { Header } from '@/components/layout/Header';
+import { useCart } from '@/lib/hooks/useCart';
+import { createOrder } from '@/lib/actions/orders';
 
 export default function CheckoutPage() {
-    const t = useTranslations();
+    const params = useParams();
     const router = useRouter();
-    const { state, getTotal, clearCart } = useCart();
+    const locale = params.locale as string;
+    const t = useTranslations('checkout');
+    const { items, getTotal, getSellerIds, clearCart } = useCart();
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [deliveryInfo, setDeliveryInfo] = useState({
-        address: '',
-        phone: '',
-        notes: '',
-    });
+    const total = getTotal();
+    const deliveryFee = 2.5;
+    const grandTotal = total + deliveryFee;
 
-    async function handleSubmit(e: React.FormEvent) {
-        e.preventDefault();
+    // Group items by seller
+    const itemsBySeller = items.reduce((acc, item) => {
+        if (!acc[item.seller_id]) {
+            acc[item.seller_id] = [];
+        }
+        acc[item.seller_id].push(item);
+        return acc;
+    }, {} as Record<string, typeof items>);
+
+    const sellerCount = Object.keys(itemsBySeller).length;
+
+    async function handleSubmit(formData: FormData) {
+        setLoading(true);
         setError(null);
 
-        if (!deliveryInfo.address.trim()) {
-            setError('Delivery address is required');
+        const address = formData.get('address') as string;
+        const phone = formData.get('phone') as string;
+        const notes = formData.get('notes') as string;
+
+        if (!address || !phone) {
+            setError(locale === 'ar' ? 'العنوان ورقم الهاتف مطلوبان' : 'Address and phone are required');
+            setLoading(false);
             return;
         }
 
-        if (!deliveryInfo.phone.trim()) {
-            setError('Phone number is required');
-            return;
-        }
+        try {
+            // Create orders for each seller
+            for (const [sellerId, sellerItems] of Object.entries(itemsBySeller)) {
+                const orderTotal = sellerItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-        setLoading(true);
+                const result = await createOrder({
+                    sellerId,
+                    items: sellerItems.map(item => ({
+                        productId: item.id,
+                        quantity: item.quantity,
+                        unitPrice: item.price,
+                    })),
+                    totalAmount: orderTotal + (deliveryFee / sellerCount),
+                    deliveryFee: deliveryFee / sellerCount,
+                    deliveryAddress: address,
+                    deliveryPhone: phone,
+                    notes: notes || null,
+                });
 
-        const result = await createOrder(state.items, deliveryInfo);
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+            }
 
-        if (result.success && result.orderId) {
             clearCart();
-            router.push(`/buyer/orders/${result.orderId}`);
-        } else {
-            setError(result.error || 'Failed to create order');
+            router.push(`/${locale}/buyer/orders?success=true`);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to create order');
             setLoading(false);
         }
     }
 
-    if (state.items.length === 0) {
+    if (items.length === 0) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-                <div className="text-center">
-                    <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg
-                            className="w-10 h-10 text-gray-400"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
+            <>
+                <Header />
+                <main className="min-h-screen bg-muted/30 flex items-center justify-center">
+                    <div className="text-center">
+                        <div className="text-6xl mb-4">🛒</div>
+                        <h1 className="text-xl font-semibold mb-2">
+                            {locale === 'ar' ? 'سلتك فارغة' : 'Your cart is empty'}
+                        </h1>
+                        <Link
+                            href={`/${locale}/products`}
+                            className="text-primary hover:underline"
                         >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
-                            />
-                        </svg>
+                            {locale === 'ar' ? 'تصفح المنتجات' : 'Browse Products'}
+                        </Link>
                     </div>
-                    <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                        {t('cart.empty')}
-                    </h2>
-                    <p className="text-gray-500 mb-6">{t('cart.emptyMessage')}</p>
-                    <Link
-                        href="/products"
-                        className="inline-flex items-center px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700"
-                    >
-                        {t('cart.continueShopping')}
-                    </Link>
-                </div>
-            </div>
+                </main>
+            </>
         );
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 py-8">
-            <div className="container mx-auto px-4">
-                <h1 className="text-2xl font-bold text-gray-900 mb-8">
-                    {t('checkout.title')}
-                </h1>
+        <>
+            <Header />
+            <main className="min-h-screen bg-muted/30">
+                <div className="container mx-auto px-4 py-8">
+                    <h1 className="text-2xl font-bold mb-8">{t('title')}</h1>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Main Form */}
-                    <div className="lg:col-span-2">
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            {error && (
-                                <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-600">
-                                    {error}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Checkout Form */}
+                        <div className="lg:col-span-2">
+                            <form action={handleSubmit} className="space-y-6">
+                                {error && (
+                                    <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg">
+                                        {error}
+                                    </div>
+                                )}
+
+                                {/* Delivery Address */}
+                                <div className="bg-card rounded-2xl p-6 shadow-card">
+                                    <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                                        <span>📍</span>
+                                        {t('deliveryAddress')}
+                                    </h2>
+                                    <textarea
+                                        name="address"
+                                        rows={3}
+                                        required
+                                        className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none resize-none"
+                                        placeholder={t('addressPlaceholder')}
+                                    />
                                 </div>
-                            )}
 
-                            {/* Delivery Info */}
-                            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                                    {t('checkout.deliveryInfo')}
-                                </h2>
-
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            {t('checkout.address')} *
-                                        </label>
-                                        <textarea
-                                            value={deliveryInfo.address}
-                                            onChange={(e) =>
-                                                setDeliveryInfo({ ...deliveryInfo, address: e.target.value })
-                                            }
-                                            rows={3}
-                                            required
-                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 resize-none"
-                                            placeholder={t('checkout.addressPlaceholder')}
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            {t('checkout.phone')} *
-                                        </label>
-                                        <input
-                                            type="tel"
-                                            value={deliveryInfo.phone}
-                                            onChange={(e) =>
-                                                setDeliveryInfo({ ...deliveryInfo, phone: e.target.value })
-                                            }
-                                            required
-                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                            placeholder="+962 7X XXX XXXX"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            {t('checkout.notes')}
-                                        </label>
-                                        <textarea
-                                            value={deliveryInfo.notes}
-                                            onChange={(e) =>
-                                                setDeliveryInfo({ ...deliveryInfo, notes: e.target.value })
-                                            }
-                                            rows={2}
-                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 resize-none"
-                                            placeholder={t('checkout.notesPlaceholder')}
-                                        />
-                                    </div>
+                                {/* Phone */}
+                                <div className="bg-card rounded-2xl p-6 shadow-card">
+                                    <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                                        <span>📱</span>
+                                        {locale === 'ar' ? 'رقم الهاتف' : 'Phone Number'}
+                                    </h2>
+                                    <input
+                                        type="tel"
+                                        name="phone"
+                                        required
+                                        className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                                        placeholder="+962 7X XXX XXXX"
+                                    />
                                 </div>
-                            </div>
 
-                            {/* Payment Method */}
-                            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                                    {t('checkout.paymentMethod')}
-                                </h2>
+                                {/* Notes */}
+                                <div className="bg-card rounded-2xl p-6 shadow-card">
+                                    <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                                        <span>📝</span>
+                                        {locale === 'ar' ? 'ملاحظات' : 'Notes'}
+                                    </h2>
+                                    <textarea
+                                        name="notes"
+                                        rows={2}
+                                        className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none resize-none"
+                                        placeholder={locale === 'ar' ? 'ملاحظات إضافية (اختياري)' : 'Additional notes (optional)'}
+                                    />
+                                </div>
 
-                                <div className="flex items-center gap-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-                                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                                        <svg
-                                            className="w-6 h-6 text-green-600"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                strokeWidth={2}
-                                                d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-                                            />
-                                        </svg>
-                                    </div>
-                                    <div>
-                                        <p className="font-medium text-green-800">
-                                            {t('checkout.cod')}
-                                        </p>
-                                        <p className="text-sm text-green-600">
-                                            {t('checkout.codDescription')}
-                                        </p>
+                                {/* Payment Method */}
+                                <div className="bg-card rounded-2xl p-6 shadow-card">
+                                    <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                                        <span>💵</span>
+                                        {t('paymentMethod')}
+                                    </h2>
+                                    <div className="flex items-center gap-3 p-4 bg-success/10 border-2 border-success rounded-xl">
+                                        <div className="w-12 h-12 rounded-lg bg-success/20 flex items-center justify-center text-2xl">
+                                            💵
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-success">{t('cashOnDelivery')}</p>
+                                            <p className="text-sm text-secondary">{t('codNote')}</p>
+                                        </div>
+                                        <div className="w-6 h-6 rounded-full bg-success flex items-center justify-center">
+                                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Submit Button (Mobile) */}
-                            <div className="lg:hidden">
+                                {/* Submit Button (Mobile) */}
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full py-4 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                                    className="lg:hidden w-full py-4 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-colors disabled:opacity-50"
                                 >
-                                    {loading ? t('common.loading') : t('checkout.placeOrder')}
+                                    {loading
+                                        ? (locale === 'ar' ? 'جاري الطلب...' : 'Placing Order...')
+                                        : t('placeOrder')}
                                 </button>
-                            </div>
-                        </form>
-                    </div>
+                            </form>
+                        </div>
 
-                    {/* Order Summary */}
-                    <div className="lg:col-span-1">
-                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-4">
-                            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                                {t('checkout.orderSummary')}
-                            </h2>
+                        {/* Order Summary */}
+                        <div className="lg:col-span-1">
+                            <div className="bg-card rounded-2xl p-6 shadow-card sticky top-24">
+                                <h2 className="text-lg font-semibold mb-4">
+                                    {locale === 'ar' ? 'ملخص الطلب' : 'Order Summary'}
+                                </h2>
 
-                            {/* Seller */}
-                            <div className="text-sm text-gray-500 mb-4">
-                                {t('checkout.sellerFrom')}: {state.sellerName || 'Seller'}
-                            </div>
-
-                            {/* Items */}
-                            <div className="space-y-3 mb-4">
-                                {state.items.map((item) => (
-                                    <div key={item.productId} className="flex justify-between">
-                                        <div className="flex-1">
-                                            <p className="text-sm font-medium text-gray-900 truncate">
-                                                {item.productName}
-                                            </p>
-                                            <p className="text-xs text-gray-500">
-                                                {item.quantity} × {item.price.toFixed(2)} JOD
+                                {/* Items Preview */}
+                                <div className="space-y-3 mb-4 max-h-48 overflow-y-auto">
+                                    {items.map((item) => (
+                                        <div key={item.id} className="flex gap-3">
+                                            <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-muted flex-shrink-0">
+                                                {item.image ? (
+                                                    <Image
+                                                        src={item.image}
+                                                        alt={locale === 'ar' ? item.name_ar : item.name_en}
+                                                        fill
+                                                        className="object-cover"
+                                                    />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-lg">
+                                                        📦
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium truncate">
+                                                    {locale === 'ar' ? item.name_ar : item.name_en}
+                                                </p>
+                                                <p className="text-xs text-secondary">
+                                                    {item.quantity} × {item.price.toFixed(2)}
+                                                </p>
+                                            </div>
+                                            <p className="text-sm font-medium">
+                                                {(item.price * item.quantity).toFixed(2)}
                                             </p>
                                         </div>
-                                        <p className="text-sm font-medium text-gray-900">
-                                            {(item.price * item.quantity).toFixed(2)} JOD
-                                        </p>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="border-t border-gray-200 pt-4">
-                                <div className="flex justify-between text-lg font-bold">
-                                    <span>{t('checkout.total')}</span>
-                                    <span className="text-indigo-600">{getTotal().toFixed(2)} JOD</span>
+                                    ))}
                                 </div>
-                            </div>
 
-                            {/* Submit Button (Desktop) */}
-                            <button
-                                type="submit"
-                                form="checkout-form"
-                                disabled={loading}
-                                onClick={handleSubmit}
-                                className="hidden lg:block w-full mt-6 py-4 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                            >
-                                {loading ? t('common.loading') : t('checkout.placeOrder')}
-                            </button>
+                                <div className="border-t border-border pt-4 space-y-3">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-secondary">
+                                            {locale === 'ar' ? 'المجموع الفرعي' : 'Subtotal'}
+                                        </span>
+                                        <span>{total.toFixed(2)} JOD</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-secondary">
+                                            {locale === 'ar' ? 'التوصيل' : 'Delivery'}
+                                        </span>
+                                        <span>{deliveryFee.toFixed(2)} JOD</span>
+                                    </div>
+                                    <div className="flex justify-between font-bold pt-2 border-t border-border">
+                                        <span>{locale === 'ar' ? 'الإجمالي' : 'Total'}</span>
+                                        <span className="text-primary text-lg">
+                                            {grandTotal.toFixed(2)} JOD
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Submit Button (Desktop) */}
+                                <button
+                                    type="submit"
+                                    form="checkout-form"
+                                    onClick={() => {
+                                        const form = document.querySelector('form');
+                                        if (form) form.requestSubmit();
+                                    }}
+                                    disabled={loading}
+                                    className="hidden lg:flex w-full mt-6 py-4 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-colors disabled:opacity-50 items-center justify-center gap-2"
+                                >
+                                    {loading ? (
+                                        locale === 'ar' ? 'جاري الطلب...' : 'Placing Order...'
+                                    ) : (
+                                        <>
+                                            {t('placeOrder')}
+                                            <span className="font-normal">({grandTotal.toFixed(2)} JOD)</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
+            </main>
+        </>
     );
 }

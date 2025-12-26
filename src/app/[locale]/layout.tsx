@@ -1,27 +1,28 @@
+import type { Metadata } from "next";
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
-import { notFound } from 'next/navigation';
-import { routing } from '@/i18n/routing';
-import { Geist, Geist_Mono } from 'next/font/google';
-import { CartProvider } from '@/lib/cart/CartContext';
-import '../globals.css';
-
-// Force Node.js runtime
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+import { Geist, Geist_Mono } from "next/font/google";
+import { locales, type Locale } from '@/i18n/config';
+import { CartProvider } from '@/lib/hooks/useCart';
+import "../globals.css";
 
 const geistSans = Geist({
-    variable: '--font-geist-sans',
-    subsets: ['latin'],
+    variable: "--font-geist-sans",
+    subsets: ["latin"],
 });
 
 const geistMono = Geist_Mono({
-    variable: '--font-geist-mono',
-    subsets: ['latin'],
+    variable: "--font-geist-mono",
+    subsets: ["latin"],
 });
 
+export const metadata: Metadata = {
+    title: "JordanMarket - سوق الأردن",
+    description: "Shop local, support Jordan. Your trusted Jordanian marketplace.",
+};
+
 export function generateStaticParams() {
-    return routing.locales.map((locale) => ({ locale }));
+    return locales.map((locale) => ({ locale }));
 }
 
 export default async function LocaleLayout({
@@ -32,25 +33,15 @@ export default async function LocaleLayout({
     params: Promise<{ locale: string }>;
 }) {
     const { locale } = await params;
-
-    // Validate locale
-    if (!routing.locales.includes(locale as 'en' | 'ar')) {
-        notFound();
-    }
-
-    // Enable static rendering
     setRequestLocale(locale);
 
-    // Get messages for the locale
     const messages = await getMessages();
-
-    // Determine text direction
-    const dir = locale === 'ar' ? 'rtl' : 'ltr';
+    const direction = locale === 'ar' ? 'rtl' : 'ltr';
 
     return (
-        <html lang={locale} dir={dir}>
+        <html lang={locale} dir={direction} suppressHydrationWarning>
             <body
-                className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-gray-50`}
+                className={`${geistSans.variable} ${geistMono.variable} antialiased`}
             >
                 <NextIntlClientProvider messages={messages}>
                     <CartProvider>
@@ -61,3 +52,4 @@ export default async function LocaleLayout({
         </html>
     );
 }
+

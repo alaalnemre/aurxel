@@ -1,12 +1,9 @@
-import { useTranslations } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
-import { Link } from '@/i18n/navigation';
+import { useTranslations } from 'next-intl';
+import Link from 'next/link';
+import { Header } from '@/components/layout/Header';
 
-// Force Node.js runtime
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
-export default async function LandingPage({
+export default async function HomePage({
     params,
 }: {
     params: Promise<{ locale: string }>;
@@ -14,148 +11,100 @@ export default async function LandingPage({
     const { locale } = await params;
     setRequestLocale(locale);
 
-    return <LandingPageContent />;
+    return (
+        <>
+            <Header />
+            <main>
+                <HeroSection locale={locale} />
+                <FeaturedSection locale={locale} />
+            </main>
+        </>
+    );
 }
 
-function LandingPageContent() {
-    const t = useTranslations();
+function HeroSection({ locale }: { locale: string }) {
+    const t = useTranslations('home.hero');
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-800">
-            {/* Navigation */}
-            <nav className="px-6 py-4">
-                <div className="mx-auto max-w-7xl flex items-center justify-between">
-                    <div className="text-2xl font-bold text-white">
-                        {t('common.appName')}
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <Link
-                            href="/login"
-                            className="px-4 py-2 text-white/90 hover:text-white transition-colors"
+        <section className="relative overflow-hidden py-20 lg:py-32">
+            {/* Background gradient */}
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5" />
+
+            {/* Content */}
+            <div className="container mx-auto px-4 relative">
+                <div className="max-w-3xl mx-auto text-center">
+                    <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent animate-fadeIn">
+                        {t('title')}
+                    </h1>
+                    <p className="text-lg md:text-xl text-secondary mb-8 animate-fadeIn" style={{ animationDelay: '0.1s' }}>
+                        {t('subtitle')}
+                    </p>
+                    <Link
+                        href={`/${locale}/products`}
+                        className="inline-flex items-center gap-2 px-8 py-4 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-xl animate-fadeIn"
+                        style={{ animationDelay: '0.2s' }}
+                    >
+                        {t('cta')}
+                        <svg className="w-5 h-5 rtl:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                    </Link>
+                </div>
+            </div>
+
+            {/* Decorative elements */}
+            <div className="absolute -top-20 -right-20 w-64 h-64 bg-primary/10 rounded-full blur-3xl" />
+            <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-accent/10 rounded-full blur-3xl" />
+        </section>
+    );
+}
+
+function FeaturedSection({ locale }: { locale: string }) {
+    const t = useTranslations('home');
+
+    // Placeholder for featured products - will be dynamic later
+    const placeholderProducts = [
+        { id: 1, name: 'Product 1', price: 25 },
+        { id: 2, name: 'Product 2', price: 35 },
+        { id: 3, name: 'Product 3', price: 45 },
+        { id: 4, name: 'Product 4', price: 55 },
+    ];
+
+    return (
+        <section className="py-16 bg-muted/50">
+            <div className="container mx-auto px-4">
+                <h2 className="text-2xl md:text-3xl font-bold mb-8 text-center">{t('featured')}</h2>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {placeholderProducts.map((product, index) => (
+                        <div
+                            key={product.id}
+                            className="bg-card rounded-2xl p-4 shadow-card hover:shadow-card-hover transition-all duration-300 hover:-translate-y-1 animate-fadeIn"
+                            style={{ animationDelay: `${index * 0.1}s` }}
                         >
-                            {t('nav.login')}
-                        </Link>
-                        <Link
-                            href="/register"
-                            className="px-6 py-2 bg-white text-indigo-900 rounded-full font-semibold hover:bg-white/90 transition-colors"
-                        >
-                            {t('nav.register')}
-                        </Link>
-                    </div>
-                </div>
-            </nav>
-
-            {/* Hero Section */}
-            <main className="px-6 pt-20 pb-32">
-                <div className="mx-auto max-w-7xl">
-                    <div className="text-center">
-                        <h1 className="text-5xl md:text-7xl font-bold text-white mb-6">
-                            {t('landing.title')}
-                        </h1>
-                        <p className="text-xl md:text-2xl text-white/80 mb-4">
-                            {t('landing.subtitle')}
-                        </p>
-                        <p className="text-lg text-white/60 max-w-2xl mx-auto mb-12">
-                            {t('landing.description')}
-                        </p>
-                        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                            <Link
-                                href="/register"
-                                className="px-8 py-4 bg-white text-indigo-900 rounded-full font-semibold text-lg hover:bg-white/90 transition-all hover:scale-105 shadow-xl"
-                            >
-                                {t('landing.cta.buyer')}
-                            </Link>
-                            <Link
-                                href="/register"
-                                className="px-8 py-4 bg-transparent border-2 border-white text-white rounded-full font-semibold text-lg hover:bg-white/10 transition-all hover:scale-105"
-                            >
-                                {t('landing.cta.seller')}
-                            </Link>
-                        </div>
-                    </div>
-
-                    {/* Features */}
-                    <div className="mt-32 grid md:grid-cols-3 gap-8">
-                        {/* COD Feature */}
-                        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center">
-                            <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <svg
-                                    className="w-8 h-8 text-green-400"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-                                    />
+                            <div className="aspect-square bg-muted rounded-xl mb-4 flex items-center justify-center text-secondary">
+                                <svg className="w-16 h-16 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                 </svg>
                             </div>
-                            <h3 className="text-xl font-semibold text-white mb-2">
-                                {t('landing.features.cod')}
-                            </h3>
-                            <p className="text-white/60">{t('landing.features.codDesc')}</p>
+                            <h3 className="font-semibold mb-2">{product.name}</h3>
+                            <p className="text-primary font-bold">{product.price} JOD</p>
                         </div>
-
-                        {/* Local Delivery Feature */}
-                        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center">
-                            <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <svg
-                                    className="w-8 h-8 text-blue-400"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0"
-                                    />
-                                </svg>
-                            </div>
-                            <h3 className="text-xl font-semibold text-white mb-2">
-                                {t('landing.features.local')}
-                            </h3>
-                            <p className="text-white/60">{t('landing.features.localDesc')}</p>
-                        </div>
-
-                        {/* Secure Platform Feature */}
-                        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center">
-                            <div className="w-16 h-16 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <svg
-                                    className="w-8 h-8 text-purple-400"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-                                    />
-                                </svg>
-                            </div>
-                            <h3 className="text-xl font-semibold text-white mb-2">
-                                {t('landing.features.secure')}
-                            </h3>
-                            <p className="text-white/60">
-                                {t('landing.features.secureDesc')}
-                            </p>
-                        </div>
-                    </div>
+                    ))}
                 </div>
-            </main>
 
-            {/* Footer */}
-            <footer className="px-6 py-8 border-t border-white/10">
-                <div className="mx-auto max-w-7xl text-center text-white/40 text-sm">
-                    © 2024 JordanMarket. All rights reserved.
+                <div className="text-center mt-8">
+                    <Link
+                        href={`/${locale}/products`}
+                        className="inline-flex items-center gap-2 text-primary hover:text-primary-dark font-medium transition-colors"
+                    >
+                        View All Products
+                        <svg className="w-4 h-4 rtl:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                    </Link>
                 </div>
-            </footer>
-        </div>
+            </div>
+        </section>
     );
 }

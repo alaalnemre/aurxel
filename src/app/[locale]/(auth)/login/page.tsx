@@ -1,27 +1,25 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { Link } from '@/i18n/navigation';
-import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
-import { login } from '../actions';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { signIn } from '@/lib/actions/auth';
 
 export default function LoginPage() {
-    const t = useTranslations();
-    const searchParams = useSearchParams();
-    const redirectTo = searchParams.get('redirect');
+    const params = useParams();
+    const locale = params.locale as string;
+    const t = useTranslations('auth');
+    const tCommon = useTranslations('common');
+
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
     async function handleSubmit(formData: FormData) {
-        setError(null);
         setLoading(true);
+        setError(null);
 
-        if (redirectTo) {
-            formData.set('redirect', redirectTo);
-        }
-
-        const result = await login(formData);
+        const result = await signIn(locale, formData);
 
         if (result?.error) {
             setError(result.error);
@@ -30,90 +28,79 @@ export default function LoginPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-800 flex items-center justify-center px-4">
-            <div className="w-full max-w-md">
+        <div className="min-h-screen flex items-center justify-center py-12 px-4">
+            {/* Background */}
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5" />
+
+            <div className="relative w-full max-w-md">
                 {/* Logo */}
                 <div className="text-center mb-8">
-                    <Link href="/" className="text-3xl font-bold text-white">
-                        {t('common.appName')}
+                    <Link href={`/${locale}`} className="inline-flex items-center gap-2">
+                        <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center">
+                            <span className="text-white font-bold text-2xl">J</span>
+                        </div>
+                        <span className="font-bold text-2xl">{tCommon('appName')}</span>
                     </Link>
                 </div>
 
-                {/* Login Card */}
-                <div className="bg-white rounded-2xl shadow-2xl p-8">
-                    <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                        {t('auth.login.title')}
-                    </h1>
-                    <p className="text-gray-600 mb-8">{t('auth.login.subtitle')}</p>
+                <div className="bg-card rounded-2xl p-8 shadow-card animate-fadeIn">
+                    <h1 className="text-2xl font-bold text-center mb-2">{t('loginTitle')}</h1>
+                    <p className="text-secondary text-center mb-6">{t('loginSubtitle')}</p>
 
                     {error && (
-                        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                        <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg mb-4">
                             {error}
                         </div>
                     )}
 
-                    <form action={handleSubmit} className="space-y-6">
+                    <form action={handleSubmit} className="space-y-4">
                         <div>
-                            <label
-                                htmlFor="email"
-                                className="block text-sm font-medium text-gray-700 mb-2"
-                            >
-                                {t('auth.login.email')}
+                            <label htmlFor="email" className="block text-sm font-medium mb-1.5">
+                                {t('email')}
                             </label>
                             <input
+                                type="email"
                                 id="email"
                                 name="email"
-                                type="email"
                                 required
-                                autoComplete="email"
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                                 placeholder="you@example.com"
                             />
                         </div>
 
                         <div>
-                            <label
-                                htmlFor="password"
-                                className="block text-sm font-medium text-gray-700 mb-2"
-                            >
-                                {t('auth.login.password')}
+                            <label htmlFor="password" className="block text-sm font-medium mb-1.5">
+                                {t('password')}
                             </label>
                             <input
+                                type="password"
                                 id="password"
                                 name="password"
-                                type="password"
                                 required
-                                autoComplete="current-password"
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                                 placeholder="••••••••"
                             />
                         </div>
 
-                        <div className="flex items-center justify-between">
-                            <Link
-                                href="/"
-                                className="text-sm text-indigo-600 hover:text-indigo-500"
-                            >
-                                {t('auth.login.forgotPassword')}
+                        <div className="flex items-center justify-between text-sm">
+                            <Link href={`/${locale}/forgot-password`} className="text-primary hover:underline">
+                                {t('forgotPassword')}
                             </Link>
                         </div>
 
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full py-3 px-4 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full py-3 px-4 bg-primary hover:bg-primary-dark text-white font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            {loading ? t('common.loading') : t('auth.login.submit')}
+                            {loading ? tCommon('loading') : t('signIn')}
                         </button>
                     </form>
 
-                    <div className="mt-8 text-center text-sm text-gray-600">
-                        {t('auth.login.noAccount')}{' '}
-                        <Link
-                            href="/register"
-                            className="text-indigo-600 font-semibold hover:text-indigo-500"
-                        >
-                            {t('auth.login.register')}
+                    <div className="mt-6 text-center text-sm text-secondary">
+                        {t('noAccount')}{' '}
+                        <Link href={`/${locale}/register`} className="text-primary font-medium hover:underline">
+                            {t('signUp')}
                         </Link>
                     </div>
                 </div>
