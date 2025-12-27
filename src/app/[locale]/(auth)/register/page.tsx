@@ -6,8 +6,6 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { signUp } from '@/lib/actions/auth';
 
-type Role = 'buyer' | 'seller' | 'driver';
-
 export default function RegisterPage() {
     const params = useParams();
     const locale = params.locale as string;
@@ -16,13 +14,12 @@ export default function RegisterPage() {
 
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [selectedRole, setSelectedRole] = useState<Role>('buyer');
 
     async function handleSubmit(formData: FormData) {
         setLoading(true);
         setError(null);
 
-        formData.set('role', selectedRole);
+        // No role selection - all users start as buyers
         const result = await signUp(locale, formData);
 
         if (result?.error) {
@@ -30,12 +27,6 @@ export default function RegisterPage() {
             setLoading(false);
         }
     }
-
-    const roles: { value: Role; icon: string }[] = [
-        { value: 'buyer', icon: '🛒' },
-        { value: 'seller', icon: '🏪' },
-        { value: 'driver', icon: '🛵' },
-    ];
 
     return (
         <div className="min-h-screen flex items-center justify-center py-12 px-4">
@@ -45,44 +36,41 @@ export default function RegisterPage() {
             <div className="relative w-full max-w-md">
                 {/* Logo */}
                 <div className="text-center mb-8">
-                    <Link href={`/${locale}`} className="inline-flex items-center gap-2">
-                        <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center">
-                            <span className="text-white font-bold text-2xl">J</span>
+                    <Link href={`/${locale}`} className="inline-flex items-center gap-3">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-lg shadow-primary/25">
+                            <span className="text-white font-bold text-2xl">🛒</span>
                         </div>
-                        <span className="font-bold text-2xl">{tCommon('appName')}</span>
+                        <span className="font-bold text-2xl gradient-text">{tCommon('appName')}</span>
                     </Link>
                 </div>
 
-                <div className="bg-card rounded-2xl p-8 shadow-card animate-fadeIn">
+                <div className="card animate-fadeIn">
                     <h1 className="text-2xl font-bold text-center mb-2">{t('registerTitle')}</h1>
                     <p className="text-secondary text-center mb-6">{t('registerSubtitle')}</p>
 
-                    {error && (
-                        <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg mb-4">
-                            {error}
-                        </div>
-                    )}
-
-                    {/* Role Selection */}
-                    <div className="mb-6">
-                        <label className="block text-sm font-medium mb-3">{t('selectRole')}</label>
-                        <div className="grid grid-cols-3 gap-3">
-                            {roles.map((role) => (
-                                <button
-                                    key={role.value}
-                                    type="button"
-                                    onClick={() => setSelectedRole(role.value)}
-                                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${selectedRole === role.value
-                                            ? 'border-primary bg-primary/5'
-                                            : 'border-border hover:border-primary/50'
-                                        }`}
-                                >
-                                    <span className="text-2xl">{role.icon}</span>
-                                    <span className="text-sm font-medium">{t(`${role.value}Role`)}</span>
-                                </button>
-                            ))}
+                    {/* Unified Registration Notice */}
+                    <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 mb-6">
+                        <div className="flex items-start gap-3">
+                            <span className="text-2xl">✨</span>
+                            <div className="text-sm">
+                                <p className="font-medium text-foreground">
+                                    {locale === 'ar' ? 'ابدأ التسوق الآن!' : 'Start shopping right away!'}
+                                </p>
+                                <p className="text-muted-foreground mt-1">
+                                    {locale === 'ar'
+                                        ? 'يمكنك لاحقاً أن تصبح بائعاً أو سائقاً من لوحة التحكم الخاصة بك.'
+                                        : 'You can become a seller or driver later from your dashboard.'}
+                                </p>
+                            </div>
                         </div>
                     </div>
+
+                    {error && (
+                        <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-xl mb-4 flex items-center gap-2">
+                            <span>⚠️</span>
+                            <span>{error}</span>
+                        </div>
+                    )}
 
                     <form action={handleSubmit} className="space-y-4">
                         <div>
@@ -94,7 +82,8 @@ export default function RegisterPage() {
                                 id="fullName"
                                 name="fullName"
                                 required
-                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                                className="w-full"
+                                placeholder={locale === 'ar' ? 'أدخل اسمك الكامل' : 'Enter your full name'}
                             />
                         </div>
 
@@ -107,7 +96,6 @@ export default function RegisterPage() {
                                 id="email"
                                 name="email"
                                 required
-                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                                 placeholder="you@example.com"
                             />
                         </div>
@@ -120,7 +108,6 @@ export default function RegisterPage() {
                                 type="tel"
                                 id="phone"
                                 name="phone"
-                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                                 placeholder="+962 7X XXX XXXX"
                             />
                         </div>
@@ -135,7 +122,6 @@ export default function RegisterPage() {
                                 name="password"
                                 required
                                 minLength={6}
-                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                                 placeholder="••••••••"
                             />
                         </div>
@@ -150,7 +136,6 @@ export default function RegisterPage() {
                                 name="confirmPassword"
                                 required
                                 minLength={6}
-                                className="w-full px-4 py-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                                 placeholder="••••••••"
                             />
                         </div>
@@ -158,9 +143,16 @@ export default function RegisterPage() {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full py-3 px-4 bg-primary hover:bg-primary-dark text-white font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="btn btn-primary w-full py-3 text-base"
                         >
-                            {loading ? tCommon('loading') : t('signUp')}
+                            {loading ? (
+                                <span className="flex items-center justify-center gap-2">
+                                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    {tCommon('loading')}
+                                </span>
+                            ) : (
+                                t('signUp')
+                            )}
                         </button>
                     </form>
 
@@ -169,6 +161,22 @@ export default function RegisterPage() {
                         <Link href={`/${locale}/login`} className="text-primary font-medium hover:underline">
                             {t('signIn')}
                         </Link>
+                    </div>
+                </div>
+
+                {/* Trust badges */}
+                <div className="mt-8 flex items-center justify-center gap-6 text-muted-foreground text-sm">
+                    <div className="flex items-center gap-2">
+                        <span>🔒</span>
+                        <span>{locale === 'ar' ? 'آمن' : 'Secure'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span>🇯🇴</span>
+                        <span>{locale === 'ar' ? 'أردني' : 'Jordanian'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span>💎</span>
+                        <span>QANZ</span>
                     </div>
                 </div>
             </div>

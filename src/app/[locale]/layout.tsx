@@ -40,8 +40,32 @@ export default async function LocaleLayout({
 
     return (
         <html lang={locale} dir={direction} suppressHydrationWarning>
+            <head>
+                <script
+                    dangerouslySetInnerHTML={{
+                        __html: `
+                            (function() {
+                                try {
+                                    const theme = localStorage.getItem('theme');
+                                    const root = document.documentElement;
+                                    if (theme === 'dark') {
+                                        root.classList.add('dark');
+                                        root.setAttribute('data-theme', 'dark');
+                                    } else if (theme === 'light') {
+                                        root.classList.remove('dark');
+                                        root.setAttribute('data-theme', 'light');
+                                    } else {
+                                        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                                        root.classList.toggle('dark', isDark);
+                                    }
+                                } catch (e) {}
+                            })();
+                        `,
+                    }}
+                />
+            </head>
             <body
-                className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+                className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background text-foreground`}
             >
                 <NextIntlClientProvider messages={messages}>
                     <CartProvider>

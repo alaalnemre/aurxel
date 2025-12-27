@@ -28,19 +28,20 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 const CART_STORAGE_KEY = 'jordanmarket_cart';
 
 export function CartProvider({ children }: { children: ReactNode }) {
-    const [items, setItems] = useState<CartItem[]>([]);
+    // Use lazy initialization to avoid setState in effect
+    const [items, setItems] = useState<CartItem[]>(() => {
+        if (typeof window === 'undefined') return [];
+        try {
+            const stored = localStorage.getItem(CART_STORAGE_KEY);
+            return stored ? JSON.parse(stored) : [];
+        } catch {
+            return [];
+        }
+    });
     const [loaded, setLoaded] = useState(false);
 
-    // Load cart from localStorage
+    // Mark as loaded after mount
     useEffect(() => {
-        const stored = localStorage.getItem(CART_STORAGE_KEY);
-        if (stored) {
-            try {
-                setItems(JSON.parse(stored));
-            } catch (e) {
-                console.error('Failed to parse cart:', e);
-            }
-        }
         setLoaded(true);
     }, []);
 

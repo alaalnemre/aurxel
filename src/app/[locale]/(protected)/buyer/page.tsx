@@ -79,99 +79,159 @@ export default async function BuyerDashboard({
         .gte('created_at', startOfMonth.toISOString());
 
     const greeting = getGreeting(locale);
+    const isRTL = locale === 'ar';
 
     return (
         <div className="space-y-6 animate-fadeIn">
-            {/* Welcome Header */}
-            <div className="bg-gradient-to-br from-primary to-accent rounded-2xl p-6 text-white">
-                <p className="text-lg opacity-90">{greeting}</p>
-                <h1 className="text-2xl font-bold mb-4">{profile?.full_name || t('dashboard')}</h1>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                        <p className="text-3xl font-bold">{wallet?.balance?.toFixed(0) || 0}</p>
-                        <p className="text-sm opacity-75">💎 QANZ</p>
-                    </div>
-                    <div>
-                        <p className="text-3xl font-bold">{totalOrders || 0}</p>
-                        <p className="text-sm opacity-75">{locale === 'ar' ? 'إجمالي الطلبات' : 'Total Orders'}</p>
-                    </div>
-                    <div>
-                        <p className="text-3xl font-bold">{activeOrders || 0}</p>
-                        <p className="text-sm opacity-75">{locale === 'ar' ? 'طلبات نشطة' : 'Active'}</p>
-                    </div>
-                    <div>
-                        <p className="text-3xl font-bold">{totalSpent.toFixed(0)}</p>
-                        <p className="text-sm opacity-75">💰 JOD {locale === 'ar' ? 'مُنفق' : 'Spent'}</p>
+            {/* Hero Section - Softened gradient, subtle greeting */}
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-accent/90 to-accent p-6 text-white">
+                {/* Subtle pattern overlay */}
+                <div className="absolute inset-0 opacity-10">
+                    <div className="absolute inset-0" style={{
+                        backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px)',
+                        backgroundSize: '24px 24px'
+                    }} />
+                </div>
+
+                <div className="relative">
+                    {/* Greeting - Secondary text */}
+                    <p className="text-sm text-white/70 mb-1">{greeting}</p>
+
+                    {/* Name - Not too dominant */}
+                    <h1 className="text-xl font-semibold mb-6">
+                        {profile?.full_name || t('dashboard')}
+                    </h1>
+
+                    {/* Key Stats - Emphasized */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <Link href={`/${locale}/buyer/wallet`} className="group">
+                            <div className="bg-white/10 hover:bg-white/20 rounded-xl p-3 transition-all group-hover:-translate-y-0.5">
+                                <p className="text-2xl font-bold">{wallet?.balance?.toFixed(0) || 0}</p>
+                                <p className="text-xs text-white/70 flex items-center gap-1">
+                                    <span>💎</span> QANZ
+                                </p>
+                            </div>
+                        </Link>
+                        <Link href={`/${locale}/buyer/orders`} className="group">
+                            <div className="bg-white/10 hover:bg-white/20 rounded-xl p-3 transition-all group-hover:-translate-y-0.5">
+                                <p className="text-2xl font-bold">{totalOrders || 0}</p>
+                                <p className="text-xs text-white/70">
+                                    {isRTL ? 'إجمالي الطلبات' : 'Total Orders'}
+                                </p>
+                            </div>
+                        </Link>
+                        <Link href={`/${locale}/buyer/orders?status=active`} className="group">
+                            <div className="bg-white/10 hover:bg-white/20 rounded-xl p-3 transition-all group-hover:-translate-y-0.5">
+                                <p className="text-2xl font-bold">{activeOrders || 0}</p>
+                                <p className="text-xs text-white/70">
+                                    {isRTL ? 'طلبات نشطة' : 'Active'}
+                                </p>
+                            </div>
+                        </Link>
+                        <div className="bg-white/10 rounded-xl p-3">
+                            <p className="text-2xl font-bold">{totalSpent.toFixed(0)}</p>
+                            <p className="text-xs text-white/70 flex items-center gap-1">
+                                <span>💰</span> JOD {isRTL ? 'مُنفق' : 'Spent'}
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Stats Cards - Compact with hover */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <StatCard
+                    href={`/${locale}/buyer/orders?status=delivered`}
                     icon="📦"
-                    label={locale === 'ar' ? 'تم التوصيل' : 'Delivered'}
+                    label={isRTL ? 'تم التوصيل' : 'Delivered'}
                     value={deliveredOrders || 0}
                     color="success"
                 />
                 <StatCard
+                    href={`/${locale}/buyer/orders?status=active`}
                     icon="🚚"
-                    label={locale === 'ar' ? 'قيد التوصيل' : 'In Transit'}
+                    label={isRTL ? 'قيد التوصيل' : 'In Transit'}
                     value={activeOrders || 0}
                     color="warning"
                 />
                 <StatCard
+                    href={`/${locale}/buyer/orders`}
                     icon="📅"
-                    label={locale === 'ar' ? 'هذا الشهر' : 'This Month'}
+                    label={isRTL ? 'هذا الشهر' : 'This Month'}
                     value={monthOrders || 0}
                     color="primary"
                 />
                 <StatCard
+                    href={`/${locale}/buyer/orders`}
                     icon="⭐"
-                    label={locale === 'ar' ? 'تقييماتي' : 'Reviews'}
+                    label={isRTL ? 'تقييماتي' : 'Reviews'}
                     value={0}
                     color="accent"
                 />
             </div>
 
-            {/* Quick Actions */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <QuickAction href={`/${locale}/products`} icon="🛍️" label={locale === 'ar' ? 'تسوق الآن' : 'Shop Now'} primary />
-                <QuickAction href={`/${locale}/buyer/orders`} icon="📋" label={locale === 'ar' ? 'طلباتي' : 'My Orders'} />
-                <QuickAction href={`/${locale}/buyer/wallet`} icon="💎" label={locale === 'ar' ? 'محفظتي' : 'Wallet'} />
-                <QuickAction href={`/${locale}/cart`} icon="🛒" label={locale === 'ar' ? 'السلة' : 'Cart'} />
+            {/* Quick Actions - Interactive cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <QuickAction
+                    href={`/${locale}/products`}
+                    icon="🛍️"
+                    label={isRTL ? 'تسوق الآن' : 'Shop Now'}
+                    description={isRTL ? 'تصفح المنتجات' : 'Browse products'}
+                    primary
+                />
+                <QuickAction
+                    href={`/${locale}/buyer/orders`}
+                    icon="📋"
+                    label={isRTL ? 'طلباتي' : 'My Orders'}
+                    description={isRTL ? 'تتبع طلباتك' : 'Track your orders'}
+                />
+                <QuickAction
+                    href={`/${locale}/buyer/wallet`}
+                    icon="💎"
+                    label={isRTL ? 'محفظتي' : 'Wallet'}
+                    description={isRTL ? 'رصيد QANZ' : 'QANZ balance'}
+                />
+                <QuickAction
+                    href={`/${locale}/cart`}
+                    icon="🛒"
+                    label={isRTL ? 'السلة' : 'Cart'}
+                    description={isRTL ? 'عرض السلة' : 'View cart'}
+                />
             </div>
 
             {/* Recent Orders */}
-            <div className="bg-card rounded-2xl p-6 shadow-card">
+            <div className="card">
                 <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold">{t('recentOrders')}</h2>
-                    <Link href={`/${locale}/buyer/orders`} className="text-sm text-primary hover:underline">
-                        {locale === 'ar' ? 'عرض الكل' : 'View All'}
+                    <h2 className="text-base font-semibold">{t('recentOrders')}</h2>
+                    <Link
+                        href={`/${locale}/buyer/orders`}
+                        className="text-sm text-accent hover:text-accent-hover transition-colors"
+                    >
+                        {isRTL ? 'عرض الكل' : 'View All'} →
                     </Link>
                 </div>
 
                 {orders && orders.length > 0 ? (
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                         {orders.map((order) => (
                             <Link
                                 key={order.id}
                                 href={`/${locale}/buyer/orders/${order.id}`}
-                                className="flex items-center justify-between p-4 bg-muted/50 rounded-xl hover:bg-muted transition-colors"
+                                className="flex items-center justify-between p-3 rounded-xl border border-border-muted hover:border-accent hover:bg-bg-muted transition-all group"
                             >
                                 <div className="flex items-center gap-3">
                                     <StatusIcon status={order.status} />
                                     <div>
-                                        <p className="font-medium">
+                                        <p className="font-medium text-sm group-hover:text-accent transition-colors">
                                             #{order.id.slice(0, 8)}
                                         </p>
-                                        <p className="text-sm text-secondary">
+                                        <p className="text-xs text-text-muted">
                                             {timeAgo(order.created_at, locale)}
                                         </p>
                                     </div>
                                 </div>
-                                <div className="text-right">
-                                    <p className="font-semibold">
+                                <div className={`text-${isRTL ? 'left' : 'right'}`}>
+                                    <p className="font-semibold text-sm">
                                         {(Number(order.total_amount) + Number(order.delivery_fee)).toFixed(2)} JOD
                                     </p>
                                     <StatusBadge status={order.status} locale={locale} />
@@ -180,95 +240,153 @@ export default async function BuyerDashboard({
                         ))}
                     </div>
                 ) : (
-                    <div className="text-center py-12">
-                        <div className="text-5xl mb-3">🛒</div>
-                        <p className="text-secondary mb-4">{t('noOrders')}</p>
-                        <Link
-                            href={`/${locale}/products`}
-                            className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-xl hover:bg-primary-dark transition-colors font-medium"
-                        >
-                            {t('startShopping')} →
-                        </Link>
-                    </div>
+                    <EmptyState locale={locale} />
                 )}
             </div>
         </div>
     );
 }
 
-function getGreeting(locale: string): string {
-    const hour = new Date().getHours();
-    if (hour < 12) return locale === 'ar' ? 'صباح الخير' : 'Good morning';
-    if (hour < 17) return locale === 'ar' ? 'مساء الخير' : 'Good afternoon';
-    return locale === 'ar' ? 'مساء الخير' : 'Good evening';
-}
+// Empty State - Encouraging copy
+function EmptyState({ locale }: { locale: string }) {
+    const isRTL = locale === 'ar';
 
-function StatCard({ icon, label, value, color }: { icon: string; label: string; value: number; color: string }) {
-    const colors: Record<string, string> = {
-        primary: 'bg-primary/10 text-primary',
-        accent: 'bg-accent/10 text-accent',
-        warning: 'bg-warning/10 text-warning',
-        success: 'bg-success/10 text-success',
-    };
     return (
-        <div className="bg-card rounded-xl p-4 shadow-card">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-2 ${colors[color]}`}>
-                <span className="text-lg">{icon}</span>
+        <div className="text-center py-12 px-4">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-accent-soft flex items-center justify-center">
+                <span className="text-3xl">🛒</span>
             </div>
-            <p className="text-2xl font-bold">{value}</p>
-            <p className="text-xs text-secondary">{label}</p>
+            <h3 className="text-lg font-semibold mb-2">
+                {isRTL ? 'هل أنت مستعد لطلبك الأول؟' : 'Ready to place your first order?'}
+            </h3>
+            <p className="text-text-muted text-sm mb-6 max-w-xs mx-auto">
+                {isRTL
+                    ? 'استكشف المنتجات المحلية الأردنية وادعم المتاجر المحلية'
+                    : 'Explore local Jordanian products and support local stores'
+                }
+            </p>
+            <Link
+                href={`/${locale}/products`}
+                className="btn btn-primary"
+            >
+                {isRTL ? 'ابدأ التسوق' : 'Start Shopping'}
+            </Link>
         </div>
     );
 }
 
-function QuickAction({ href, icon, label, primary }: { href: string; icon: string; label: string; primary?: boolean }) {
+function getGreeting(locale: string): string {
+    const hour = new Date().getHours();
+    if (hour < 12) return locale === 'ar' ? 'صباح الخير 👋' : 'Good morning 👋';
+    if (hour < 17) return locale === 'ar' ? 'مساء الخير 👋' : 'Good afternoon 👋';
+    return locale === 'ar' ? 'مساء الخير 👋' : 'Good evening 👋';
+}
+
+// Stats Card - Compact, clickable, with hover
+function StatCard({
+    href,
+    icon,
+    label,
+    value,
+    color
+}: {
+    href: string;
+    icon: string;
+    label: string;
+    value: number;
+    color: string;
+}) {
+    const colors: Record<string, string> = {
+        primary: 'bg-accent-soft text-accent',
+        accent: 'bg-accent-soft text-accent',
+        warning: 'bg-warning-soft text-warning',
+        success: 'bg-success-soft text-success',
+    };
+
     return (
         <Link
             href={href}
-            className={`rounded-xl p-4 text-center transition-all group ${primary
-                    ? 'bg-primary text-white hover:bg-primary-dark'
-                    : 'bg-card shadow-card hover:shadow-card-hover'
+            className="card p-3 hover:border-transparent hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group"
+        >
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${colors[color]} mb-2`}>
+                <span className="text-sm">{icon}</span>
+            </div>
+            <p className="text-xl font-bold text-text-primary group-hover:text-accent transition-colors">{value}</p>
+            <p className="text-xs text-text-muted">{label}</p>
+        </Link>
+    );
+}
+
+// Quick Action - Interactive card with description
+function QuickAction({
+    href,
+    icon,
+    label,
+    description,
+    primary
+}: {
+    href: string;
+    icon: string;
+    label: string;
+    description: string;
+    primary?: boolean;
+}) {
+    return (
+        <Link
+            href={href}
+            className={`rounded-xl p-4 transition-all group hover:-translate-y-0.5 ${primary
+                    ? 'bg-accent text-white hover:shadow-lg hover:shadow-accent/20'
+                    : 'card hover:border-accent hover:shadow-md'
                 }`}
         >
-            <div className="text-2xl mb-2 group-hover:scale-110 transition-transform">{icon}</div>
-            <span className="font-medium text-sm">{label}</span>
+            <div className={`text-2xl mb-2 group-hover:scale-110 transition-transform ${primary ? '' : ''}`}>
+                {icon}
+            </div>
+            <p className={`font-medium text-sm ${primary ? 'text-white' : 'text-text-primary'}`}>
+                {label}
+            </p>
+            <p className={`text-xs mt-0.5 ${primary ? 'text-white/70' : 'text-text-muted'}`}>
+                {description}
+            </p>
         </Link>
     );
 }
 
 function StatusIcon({ status }: { status: string }) {
     const icons: Record<string, { icon: string; bg: string }> = {
-        placed: { icon: '📝', bg: 'bg-blue-100' },
-        accepted: { icon: '✓', bg: 'bg-purple-100' },
-        preparing: { icon: '👨‍🍳', bg: 'bg-yellow-100' },
-        ready: { icon: '📦', bg: 'bg-orange-100' },
-        assigned: { icon: '🛵', bg: 'bg-indigo-100' },
-        picked_up: { icon: '🚚', bg: 'bg-cyan-100' },
-        delivered: { icon: '✅', bg: 'bg-green-100' },
-        cancelled: { icon: '❌', bg: 'bg-red-100' },
+        placed: { icon: '📝', bg: 'bg-accent-soft' },
+        accepted: { icon: '✓', bg: 'bg-accent-soft' },
+        preparing: { icon: '👨‍🍳', bg: 'bg-warning-soft' },
+        ready: { icon: '📦', bg: 'bg-warning-soft' },
+        assigned: { icon: '🛵', bg: 'bg-accent-soft' },
+        picked_up: { icon: '🚚', bg: 'bg-accent-soft' },
+        delivered: { icon: '✅', bg: 'bg-success-soft' },
+        cancelled: { icon: '❌', bg: 'bg-danger-soft' },
     };
-    const config = icons[status] || { icon: '📋', bg: 'bg-gray-100' };
+    const config = icons[status] || { icon: '📋', bg: 'bg-bg-muted' };
+
     return (
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${config.bg}`}>
-            <span className="text-lg">{config.icon}</span>
+        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${config.bg}`}>
+            <span className="text-base">{config.icon}</span>
         </div>
     );
 }
 
 function StatusBadge({ status, locale }: { status: string; locale: string }) {
-    const config: Record<string, { bg: string; label: { en: string; ar: string } }> = {
-        placed: { bg: 'bg-blue-100 text-blue-700', label: { en: 'Placed', ar: 'جديد' } },
-        accepted: { bg: 'bg-purple-100 text-purple-700', label: { en: 'Accepted', ar: 'مقبول' } },
-        preparing: { bg: 'bg-yellow-100 text-yellow-700', label: { en: 'Preparing', ar: 'قيد التحضير' } },
-        ready: { bg: 'bg-orange-100 text-orange-700', label: { en: 'Ready', ar: 'جاهز' } },
-        assigned: { bg: 'bg-indigo-100 text-indigo-700', label: { en: 'Assigned', ar: 'تم التعيين' } },
-        picked_up: { bg: 'bg-cyan-100 text-cyan-700', label: { en: 'Picked Up', ar: 'تم الاستلام' } },
-        delivered: { bg: 'bg-green-100 text-green-700', label: { en: 'Delivered', ar: 'تم التوصيل' } },
-        cancelled: { bg: 'bg-red-100 text-red-700', label: { en: 'Cancelled', ar: 'ملغي' } },
+    const config: Record<string, { classes: string; label: { en: string; ar: string } }> = {
+        placed: { classes: 'badge-primary', label: { en: 'Placed', ar: 'جديد' } },
+        accepted: { classes: 'badge-primary', label: { en: 'Accepted', ar: 'مقبول' } },
+        preparing: { classes: 'badge-warning', label: { en: 'Preparing', ar: 'قيد التحضير' } },
+        ready: { classes: 'badge-warning', label: { en: 'Ready', ar: 'جاهز' } },
+        assigned: { classes: 'badge-primary', label: { en: 'Assigned', ar: 'تم التعيين' } },
+        picked_up: { classes: 'badge-primary', label: { en: 'In Transit', ar: 'في الطريق' } },
+        delivered: { classes: 'badge-success', label: { en: 'Delivered', ar: 'تم التوصيل' } },
+        cancelled: { classes: 'badge-danger', label: { en: 'Cancelled', ar: 'ملغي' } },
     };
-    const c = config[status] || { bg: 'bg-gray-100', label: { en: status, ar: status } };
+    const c = config[status] || { classes: 'badge-default', label: { en: status, ar: status } };
+
     return (
-        <span className={`text-xs px-2 py-1 rounded-full ${c.bg}`}>
+        <span className={`badge ${c.classes}`}>
             {locale === 'ar' ? c.label.ar : c.label.en}
         </span>
     );

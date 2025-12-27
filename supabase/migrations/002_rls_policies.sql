@@ -1,5 +1,5 @@
 -- JordanMarket RLS Policies
--- Row Level Security for all tables
+-- Using capability flags (is_buyer, is_seller, is_driver, is_admin)
 
 -- Enable RLS on all tables
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
@@ -14,181 +14,312 @@ ALTER TABLE wallets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE topup_codes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wallet_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE disputes ENABLE ROW LEVEL SECURITY;
 
--- Profiles policies
-CREATE POLICY "Public profiles are viewable by everyone"
+-- Helper function to check if user has admin capability
+CREATE OR REPLACE FUNCTION is_admin(user_id UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles WHERE id = user_id AND is_admin = TRUE
+  );
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- Helper function to check if user has seller capability
+CREATE OR REPLACE FUNCTION is_seller(user_id UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles WHERE id = user_id AND is_seller = TRUE
+  );
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- Helper function to check if user has driver capability
+CREATE OR REPLACE FUNCTION is_driver(user_id UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles WHERE id = user_id AND is_driver = TRUE
+  );
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- =====================
+-- PROFILES POLICIES
+-- =====================
+
+-- Everyone can view profiles (for displaying seller/driver info)
+CREATE POLICY "Profiles are viewable by everyone"
   ON profiles FOR SELECT
   USING (true);
 
+-- Users can update their own profile
 CREATE POLICY "Users can update own profile"
   ON profiles FOR UPDATE
-  USING (auth.uid() = id);
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
--- Seller profiles policies
-CREATE POLICY "Seller profiles are viewable by everyone"
+-- Admins can update any profile (for granting capabilities)
+CREATE POLICY "Admins can update any profile"
+  ON profiles FOR UPDATE
+  USING (is_admin(auth.uid()));
+
+-- =====================
+-- SELLER PROFILES POLICIES
+-- =====================
+
+-- Anyone can view verified seller profiles
+CREATE POLICY "Verified seller profiles are public"
   ON seller_profiles FOR SELECT
-  USING (true);
+  USING (is_verified = TRUE OR auth.uid() = id OR is_admin(auth.uid()));
 
-CREATE POLICY "Sellers can update own profile"
-  ON seller_profiles FOR UPDATE
+-- Sellers can manage their own seller profile
+CREATE POLICY "Sellers can manage own seller profile"
+  ON seller_profiles FOR ALL
   USING (auth.uid() = id);
 
-CREATE POLICY "Sellers can insert own profile"
-  ON seller_profiles FOR INSERT
-  WITH CHECK (auth.uid() = id);
+-- Admins can manage all seller profiles
+CREATE POLICY "Admins can manage seller profiles"
+  ON seller_profiles FOR ALL
+  USING (is_admin(auth.uid()));
 
--- Driver profiles policies
-CREATE POLICY "Driver profiles viewable by admins and self"
+-- =====================
+-- DRIVER PROFILES POLICIES
+-- =====================
+
+-- Driver profiles visible to admins and owner
+CREATE POLICY "Driver profiles viewable by owner and admin"
   ON driver_profiles FOR SELECT
-  USING (
-    auth.uid() = id OR
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+  USING (auth.uid() = id OR is_admin(auth.uid()));
 
-CREATE POLICY "Drivers can update own profile"
-  ON driver_profiles FOR UPDATE
+-- Drivers can manage their own driver profile
+CREATE POLICY "Drivers can manage own driver profile"
+  ON driver_profiles FOR ALL
   USING (auth.uid() = id);
 
-CREATE POLICY "Drivers can insert own profile"
-  ON driver_profiles FOR INSERT
-  WITH CHECK (auth.uid() = id);
+-- Admins can manage all driver profiles
+CREATE POLICY "Admins can manage driver profiles"
+  ON driver_profiles FOR ALL
+  USING (is_admin(auth.uid()));
 
--- Categories policies (public read)
-CREATE POLICY "Categories are viewable by everyone"
+-- =====================
+-- CATEGORIES POLICIES
+-- =====================
+
+-- Anyone can view active categories
+CREATE POLICY "Active categories are public"
   ON categories FOR SELECT
-  USING (true);
+  USING (is_active = TRUE OR is_admin(auth.uid()));
 
+-- Only admins can manage categories
 CREATE POLICY "Admins can manage categories"
   ON categories FOR ALL
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+  USING (is_admin(auth.uid()));
 
--- Products policies
-CREATE POLICY "Active products are viewable by everyone"
+-- =====================
+-- PRODUCTS POLICIES
+-- =====================
+
+-- Anyone can view active products
+CREATE POLICY "Active products are public"
   ON products FOR SELECT
-  USING (is_active = true OR seller_id = auth.uid());
+  USING (is_active = TRUE OR auth.uid() = seller_id OR is_admin(auth.uid()));
 
-CREATE POLICY "Sellers can insert own products"
+-- Sellers can insert products
+CREATE POLICY "Sellers can insert products"
   ON products FOR INSERT
-  WITH CHECK (
-    auth.uid() = seller_id AND
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'seller')
-  );
+  WITH CHECK (auth.uid() = seller_id AND is_seller(auth.uid()));
 
+-- Sellers can update their own products
 CREATE POLICY "Sellers can update own products"
   ON products FOR UPDATE
-  USING (auth.uid() = seller_id);
+  USING (auth.uid() = seller_id AND is_seller(auth.uid()))
+  WITH CHECK (auth.uid() = seller_id);
 
+-- Sellers can delete their own products
 CREATE POLICY "Sellers can delete own products"
   ON products FOR DELETE
-  USING (auth.uid() = seller_id);
+  USING (auth.uid() = seller_id AND is_seller(auth.uid()));
 
--- Orders policies
-CREATE POLICY "Users can view own orders"
+-- Admins can manage all products
+CREATE POLICY "Admins can manage products"
+  ON products FOR ALL
+  USING (is_admin(auth.uid()));
+
+-- =====================
+-- ORDERS POLICIES
+-- =====================
+
+-- Buyers can view their own orders
+CREATE POLICY "Buyers can view own orders"
   ON orders FOR SELECT
-  USING (
-    auth.uid() = buyer_id OR 
-    auth.uid() = seller_id OR
-    EXISTS (SELECT 1 FROM deliveries WHERE deliveries.order_id = orders.id AND deliveries.driver_id = auth.uid()) OR
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+  USING (auth.uid() = buyer_id);
 
+-- Sellers can view orders for their products
+CREATE POLICY "Sellers can view their orders"
+  ON orders FOR SELECT
+  USING (auth.uid() = seller_id AND is_seller(auth.uid()));
+
+-- Buyers can create orders
 CREATE POLICY "Buyers can create orders"
   ON orders FOR INSERT
   WITH CHECK (auth.uid() = buyer_id);
 
-CREATE POLICY "Order participants can update orders"
+-- Sellers can update order status
+CREATE POLICY "Sellers can update order status"
   ON orders FOR UPDATE
-  USING (
-    auth.uid() = buyer_id OR 
-    auth.uid() = seller_id OR
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+  USING (auth.uid() = seller_id AND is_seller(auth.uid()));
 
--- Order items policies
-CREATE POLICY "Order items viewable by order participants"
+-- Admins can manage all orders
+CREATE POLICY "Admins can manage orders"
+  ON orders FOR ALL
+  USING (is_admin(auth.uid()));
+
+-- =====================
+-- ORDER ITEMS POLICIES
+-- =====================
+
+-- Order items viewable by order participants
+CREATE POLICY "Order items viewable by participants"
   ON order_items FOR SELECT
   USING (
     EXISTS (
-      SELECT 1 FROM orders 
-      WHERE orders.id = order_items.order_id 
+      SELECT 1 FROM orders
+      WHERE orders.id = order_items.order_id
       AND (orders.buyer_id = auth.uid() OR orders.seller_id = auth.uid())
-    ) OR
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    )
+    OR is_admin(auth.uid())
   );
 
+-- Order items can be created with order
 CREATE POLICY "Order items created with order"
   ON order_items FOR INSERT
   WITH CHECK (
     EXISTS (
-      SELECT 1 FROM orders 
-      WHERE orders.id = order_items.order_id 
+      SELECT 1 FROM orders
+      WHERE orders.id = order_items.order_id
       AND orders.buyer_id = auth.uid()
     )
   );
 
--- Deliveries policies
-CREATE POLICY "Deliveries viewable by participants"
+-- =====================
+-- DELIVERIES POLICIES
+-- =====================
+
+-- Drivers can view available deliveries
+CREATE POLICY "Drivers can view available deliveries"
   ON deliveries FOR SELECT
   USING (
-    driver_id = auth.uid() OR
-    EXISTS (
-      SELECT 1 FROM orders 
-      WHERE orders.id = deliveries.order_id 
+    (status = 'available' AND is_driver(auth.uid()))
+    OR driver_id = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM orders
+      WHERE orders.id = deliveries.order_id
       AND (orders.buyer_id = auth.uid() OR orders.seller_id = auth.uid())
-    ) OR
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin') OR
-    (status = 'available' AND EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'driver'))
+    )
+    OR is_admin(auth.uid())
   );
 
-CREATE POLICY "Drivers can update assigned deliveries"
+-- Drivers can accept available deliveries
+CREATE POLICY "Drivers can accept deliveries"
   ON deliveries FOR UPDATE
-  USING (driver_id = auth.uid() OR status = 'available');
+  USING (
+    (status = 'available' AND is_driver(auth.uid()))
+    OR (driver_id = auth.uid() AND is_driver(auth.uid()))
+    OR is_admin(auth.uid())
+  );
 
--- Wallets policies
+-- =====================
+-- WALLETS POLICIES
+-- =====================
+
+-- Users can view their own wallet
 CREATE POLICY "Users can view own wallet"
   ON wallets FOR SELECT
-  USING (user_id = auth.uid());
+  USING (auth.uid() = user_id OR is_admin(auth.uid()));
 
-CREATE POLICY "System updates wallets"
-  ON wallets FOR UPDATE
-  USING (
-    user_id = auth.uid() OR
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+-- Wallets are created by trigger, no direct insert needed
+-- Updates handled by server functions
 
--- Topup codes policies
-CREATE POLICY "Admins can view all codes"
+-- =====================
+-- TOPUP CODES POLICIES
+-- =====================
+
+-- Admins can manage topup codes
+CREATE POLICY "Admins can manage topup codes"
+  ON topup_codes FOR ALL
+  USING (is_admin(auth.uid()));
+
+-- Users can view codes they created or redeemed
+CREATE POLICY "Users can view their topup codes"
   ON topup_codes FOR SELECT
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+  USING (auth.uid() = created_by OR auth.uid() = redeemed_by);
 
-CREATE POLICY "Admins can create codes"
-  ON topup_codes FOR INSERT
-  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+-- =====================
+-- WALLET TRANSACTIONS POLICIES
+-- =====================
 
-CREATE POLICY "Users can redeem codes"
-  ON topup_codes FOR UPDATE
-  USING (redeemed_by IS NULL);
-
--- Wallet transactions policies
+-- Users can view their own transactions
 CREATE POLICY "Users can view own transactions"
   ON wallet_transactions FOR SELECT
   USING (
-    EXISTS (SELECT 1 FROM wallets WHERE wallets.id = wallet_transactions.wallet_id AND wallets.user_id = auth.uid())
+    EXISTS (
+      SELECT 1 FROM wallets
+      WHERE wallets.id = wallet_transactions.wallet_id
+      AND wallets.user_id = auth.uid()
+    )
+    OR is_admin(auth.uid())
   );
 
--- Reviews policies
-CREATE POLICY "Reviews are viewable by everyone"
+-- =====================
+-- REVIEWS POLICIES
+-- =====================
+
+-- Reviews are public
+CREATE POLICY "Reviews are public"
   ON reviews FOR SELECT
   USING (true);
 
-CREATE POLICY "Buyers can create reviews for their orders"
+-- Users can create reviews for their completed orders
+CREATE POLICY "Users can create reviews"
   ON reviews FOR INSERT
   WITH CHECK (
-    auth.uid() = reviewer_id AND
-    EXISTS (
-      SELECT 1 FROM orders 
-      WHERE orders.id = reviews.order_id 
+    auth.uid() = reviewer_id
+    AND EXISTS (
+      SELECT 1 FROM orders
+      WHERE orders.id = reviews.order_id
       AND orders.buyer_id = auth.uid()
       AND orders.status = 'delivered'
     )
   );
+
+-- =====================
+-- DISPUTES POLICIES
+-- =====================
+
+-- Users can view disputes they raised or are involved in
+CREATE POLICY "Users can view own disputes"
+  ON disputes FOR SELECT
+  USING (
+    auth.uid() = raised_by
+    OR auth.uid() = assigned_to
+    OR EXISTS (
+      SELECT 1 FROM orders
+      WHERE orders.id = disputes.order_id
+      AND (orders.buyer_id = auth.uid() OR orders.seller_id = auth.uid())
+    )
+    OR is_admin(auth.uid())
+  );
+
+-- Users can create disputes for their orders
+CREATE POLICY "Users can create disputes"
+  ON disputes FOR INSERT
+  WITH CHECK (
+    auth.uid() = raised_by
+    AND EXISTS (
+      SELECT 1 FROM orders
+      WHERE orders.id = disputes.order_id
+      AND (orders.buyer_id = auth.uid() OR orders.seller_id = auth.uid())
+    )
+  );
+
+-- Admins can update disputes
+CREATE POLICY "Admins can manage disputes"
+  ON disputes FOR UPDATE
+  USING (is_admin(auth.uid()));

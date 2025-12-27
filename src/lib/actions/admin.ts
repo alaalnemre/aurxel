@@ -33,14 +33,14 @@ export async function generateTopupCodes(
         return { error: 'Not authenticated' };
     }
 
-    // Verify admin role
+    // Verify admin capability
     const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('is_admin')
         .eq('id', user.id)
         .maybeSingle();
 
-    if (profile?.role !== 'admin') {
+    if (!profile?.is_admin) {
         return { error: 'Not authorized' };
     }
 
@@ -77,14 +77,14 @@ export async function verifySeller(sellerId: string): Promise<AdminActionResult>
         return { error: 'Not authenticated' };
     }
 
-    // Verify admin role
+    // Verify admin capability
     const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('is_admin')
         .eq('id', user.id)
         .maybeSingle();
 
-    if (profile?.role !== 'admin') {
+    if (!profile?.is_admin) {
         return { error: 'Not authorized' };
     }
 
@@ -112,14 +112,14 @@ export async function verifyDriver(driverId: string): Promise<AdminActionResult>
         return { error: 'Not authenticated' };
     }
 
-    // Verify admin role
+    // Verify admin capability
     const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('is_admin')
         .eq('id', user.id)
         .maybeSingle();
 
-    if (profile?.role !== 'admin') {
+    if (!profile?.is_admin) {
         return { error: 'Not authorized' };
     }
 

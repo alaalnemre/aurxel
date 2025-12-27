@@ -3,12 +3,22 @@
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 
-export type DriverActionResult = {
+export type ActivationResult = {
     error?: string;
     success?: boolean;
 };
 
-export async function acceptDelivery(deliveryId: string): Promise<DriverActionResult> {
+// Activate driver capability for current user
+export async function activateDriver(
+    formData: FormData
+): Promise<ActivationResult> {
+    const vehicleType = formData.get('vehicleType') as string;
+    const vehiclePlate = formData.get('vehiclePlate') as string;
+
+    if (!vehicleType || !vehiclePlate) {
+        return { error: 'Vehicle type and plate are required' };
+    }
+
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -16,38 +26,148 @@ export async function acceptDelivery(deliveryId: string): Promise<DriverActionRe
         return { error: 'Not authenticated' };
     }
 
-    // Check if delivery is still available
-    const { data: delivery } = await supabase
-        .from('deliveries')
-        .select('status')
-        .eq('id', deliveryId)
+    // Check if already a driver
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_driver')
+        .eq('id', user.id)
         .maybeSingle();
 
-    if (!delivery || delivery.status !== 'available') {
-        return { error: 'Delivery is no longer available' };
+    if (profile?.is_driver) {
+        return { error: 'Already registered as a driver' };
     }
 
-    // Assign to driver
+    // Update profile capability
+    const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ is_driver: true })
+        .eq('id', user.id);
+
+    if (profileError) {
+        return { error: 'Failed to activate driver capability' };
+    }
+
+    // Create driver profile
+    const { error: driverError } = await supabase
+        .from('driver_profiles')
+        .insert({
+            id: user.id,
+            vehicle_type: vehicleType,
+            vehicle_plate: vehiclePlate,
+            is_active: false, // Needs admin verification
+            is_verified: false,
+        });
+
+    if (driverError) {
+        // Rollback profile update
+        await supabase
+            .from('profiles')
+            .update({ is_driver: false })
+            .eq('id', user.id);
+        return { error: 'Failed to create driver profile' };
+    }
+
+    revalidatePath('/');
+    return { success: true };
+}
+
+// Update driver availability status
+export async function updateDriverStatus(
+    isActive: boolean
+): Promise<ActivationResult> {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: 'Not authenticated' };
+    }
+
+    // Verify driver is verified before allowing active status
+    const { data: driverProfile } = await supabase
+        .from('driver_profiles')
+        .select('is_verified')
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (!driverProfile) {
+        return { error: 'Driver profile not found' };
+    }
+
+    if (isActive && !driverProfile.is_verified) {
+        return { error: 'Must be verified to go active' };
+    }
+
+    const { error } = await supabase
+        .from('driver_profiles')
+        .update({ is_active: isActive })
+        .eq('id', user.id);
+
+    if (error) {
+        return { error: 'Failed to update status' };
+    }
+
+    revalidatePath('/');
+    return { success: true };
+}
+
+// Accept a delivery
+export async function acceptDelivery(
+    deliveryId: string
+): Promise<ActivationResult> {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: 'Not authenticated' };
+    }
+
+    // Verify driver is active
+    const { data: driverProfile } = await supabase
+        .from('driver_profiles')
+        .select('is_active, is_verified')
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (!driverProfile?.is_active || !driverProfile?.is_verified) {
+        return { error: 'Must be active and verified to accept deliveries' };
+    }
+
+    // Accept the delivery
     const { error } = await supabase
         .from('deliveries')
         .update({
             driver_id: user.id,
             status: 'assigned',
         })
-        .eq('id', deliveryId);
+        .eq('id', deliveryId)
+        .eq('status', 'available');
 
     if (error) {
-        console.error('[acceptDelivery]', error);
-        return { error: error.message };
+        return { error: 'Failed to accept delivery' };
     }
 
-    revalidatePath('/driver/deliveries');
-    revalidatePath('/buyer/orders');
+    // Update order status
+    const { data: delivery } = await supabase
+        .from('deliveries')
+        .select('order_id')
+        .eq('id', deliveryId)
+        .maybeSingle();
 
+    if (delivery) {
+        await supabase
+            .from('orders')
+            .update({ status: 'assigned' })
+            .eq('id', delivery.order_id);
+    }
+
+    revalidatePath('/');
     return { success: true };
 }
 
-export async function pickupDelivery(deliveryId: string): Promise<DriverActionResult> {
+// Mark delivery as picked up
+export async function markPickedUp(
+    deliveryId: string
+): Promise<ActivationResult> {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -55,48 +175,43 @@ export async function pickupDelivery(deliveryId: string): Promise<DriverActionRe
         return { error: 'Not authenticated' };
     }
 
-    // Verify delivery belongs to driver
-    const { data: delivery } = await supabase
-        .from('deliveries')
-        .select('driver_id, order_id')
-        .eq('id', deliveryId)
-        .maybeSingle();
-
-    if (!delivery || delivery.driver_id !== user.id) {
-        return { error: 'Delivery not found' };
-    }
-
-    // Update delivery status
     const { error } = await supabase
         .from('deliveries')
         .update({
             status: 'picked_up',
-            pickup_at: new Date().toISOString(),
+            picked_up_at: new Date().toISOString(),
         })
-        .eq('id', deliveryId);
+        .eq('id', deliveryId)
+        .eq('driver_id', user.id)
+        .eq('status', 'assigned');
 
     if (error) {
-        console.error('[pickupDelivery]', error);
-        return { error: error.message };
+        return { error: 'Failed to update delivery' };
     }
 
     // Update order status
-    await supabase
-        .from('orders')
-        .update({ status: 'picked_up' })
-        .eq('id', delivery.order_id);
+    const { data: delivery } = await supabase
+        .from('deliveries')
+        .select('order_id')
+        .eq('id', deliveryId)
+        .maybeSingle();
 
-    revalidatePath('/driver/deliveries');
-    revalidatePath('/buyer/orders');
-    revalidatePath('/seller/orders');
+    if (delivery) {
+        await supabase
+            .from('orders')
+            .update({ status: 'picked_up' })
+            .eq('id', delivery.order_id);
+    }
 
+    revalidatePath('/');
     return { success: true };
 }
 
-export async function completeDelivery(
+// Mark delivery as completed
+export async function markDelivered(
     deliveryId: string,
     cashCollected: number
-): Promise<DriverActionResult> {
+): Promise<ActivationResult> {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -104,18 +219,6 @@ export async function completeDelivery(
         return { error: 'Not authenticated' };
     }
 
-    // Verify delivery belongs to driver
-    const { data: delivery } = await supabase
-        .from('deliveries')
-        .select('driver_id, order_id')
-        .eq('id', deliveryId)
-        .maybeSingle();
-
-    if (!delivery || delivery.driver_id !== user.id) {
-        return { error: 'Delivery not found' };
-    }
-
-    // Update delivery status
     const { error } = await supabase
         .from('deliveries')
         .update({
@@ -123,42 +226,32 @@ export async function completeDelivery(
             delivered_at: new Date().toISOString(),
             cash_collected: cashCollected,
         })
-        .eq('id', deliveryId);
+        .eq('id', deliveryId)
+        .eq('driver_id', user.id)
+        .eq('status', 'picked_up');
 
     if (error) {
-        console.error('[completeDelivery]', error);
-        return { error: error.message };
+        return { error: 'Failed to complete delivery' };
     }
 
     // Update order status
-    await supabase
-        .from('orders')
-        .update({ status: 'delivered' })
-        .eq('id', delivery.order_id);
+    const { data: delivery } = await supabase
+        .from('deliveries')
+        .select('order_id')
+        .eq('id', deliveryId)
+        .maybeSingle();
 
-    revalidatePath('/driver/deliveries');
-    revalidatePath('/driver/earnings');
-    revalidatePath('/buyer/orders');
-    revalidatePath('/seller/orders');
+    if (delivery) {
+        await supabase
+            .from('orders')
+            .update({ status: 'delivered' })
+            .eq('id', delivery.order_id);
+    }
 
+    revalidatePath('/');
     return { success: true };
 }
 
-export async function getDriverStats(driverId: string) {
-    const supabase = await createClient();
-
-    const { data: completedDeliveries } = await supabase
-        .from('deliveries')
-        .select('cash_collected, delivered_at')
-        .eq('driver_id', driverId)
-        .eq('status', 'delivered');
-
-    const totalCash = completedDeliveries?.reduce(
-        (sum, d) => sum + (Number(d.cash_collected) || 0),
-        0
-    ) || 0;
-
-    const totalDeliveries = completedDeliveries?.length || 0;
-
-    return { totalCash, totalDeliveries };
-}
+// Aliases for backward compatibility
+export const pickupDelivery = markPickedUp;
+export const completeDelivery = markDelivered;

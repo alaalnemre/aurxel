@@ -1,27 +1,31 @@
 -- JordanMarket Database Schema
--- Initial migration: Core tables and enums
+-- Initial migration: Core tables with capability-based user model
 
 -- Enable extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Create enums
-CREATE TYPE user_role AS ENUM ('buyer', 'seller', 'driver', 'admin');
+-- Create enums (no user_role enum - using capability flags instead)
 CREATE TYPE order_status AS ENUM ('placed', 'accepted', 'preparing', 'ready', 'assigned', 'picked_up', 'delivered', 'cancelled');
 CREATE TYPE delivery_status AS ENUM ('available', 'assigned', 'picked_up', 'delivered', 'cancelled');
 CREATE TYPE transaction_type AS ENUM ('topup', 'payment', 'refund', 'payout');
+CREATE TYPE dispute_status AS ENUM ('open', 'under_review', 'resolved', 'closed');
 
--- Profiles table (extends auth.users)
+-- Profiles table (extends auth.users) with capability flags
 CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  role user_role NOT NULL DEFAULT 'buyer',
   full_name TEXT,
   phone TEXT,
   avatar_url TEXT,
+  -- Capability flags (users can have multiple capabilities)
+  is_buyer BOOLEAN NOT NULL DEFAULT TRUE,
+  is_seller BOOLEAN NOT NULL DEFAULT FALSE,
+  is_driver BOOLEAN NOT NULL DEFAULT FALSE,
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Seller profiles
+-- Seller profiles (for users with is_seller = true)
 CREATE TABLE seller_profiles (
   id UUID PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
   business_name TEXT NOT NULL,
@@ -35,7 +39,7 @@ CREATE TABLE seller_profiles (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Driver profiles
+-- Driver profiles (for users with is_driver = true)
 CREATE TABLE driver_profiles (
   id UUID PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
   id_document_url TEXT,
@@ -109,6 +113,7 @@ CREATE TABLE deliveries (
   picked_up_at TIMESTAMPTZ,
   delivered_at TIMESTAMPTZ,
   cash_collected NUMERIC(10,2),
+  tip_amount NUMERIC(10,2) DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -156,6 +161,19 @@ CREATE TABLE reviews (
   UNIQUE(order_id, target_type)
 );
 
+-- Disputes table for order complaints
+CREATE TABLE disputes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  raised_by UUID NOT NULL REFERENCES profiles(id),
+  assigned_to UUID REFERENCES profiles(id),
+  status dispute_status NOT NULL DEFAULT 'open',
+  reason TEXT NOT NULL,
+  resolution TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Create indexes
 CREATE INDEX idx_products_seller ON products(seller_id);
 CREATE INDEX idx_products_category ON products(category_id);
@@ -165,33 +183,29 @@ CREATE INDEX idx_orders_seller ON orders(seller_id);
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_deliveries_driver ON deliveries(driver_id);
 CREATE INDEX idx_deliveries_status ON deliveries(status);
+CREATE INDEX idx_disputes_order ON disputes(order_id);
+CREATE INDEX idx_disputes_status ON disputes(status);
+CREATE INDEX idx_profiles_seller ON profiles(is_seller) WHERE is_seller = TRUE;
+CREATE INDEX idx_profiles_driver ON profiles(is_driver) WHERE is_driver = TRUE;
 
 -- Trigger to auto-create profile on user signup
+-- All new users are buyers by default
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, role, full_name, phone)
+  INSERT INTO public.profiles (id, full_name, phone, is_buyer, is_seller, is_driver, is_admin)
   VALUES (
     NEW.id,
-    COALESCE(NEW.raw_user_meta_data->>'role', 'buyer')::user_role,
     NEW.raw_user_meta_data->>'full_name',
-    NEW.raw_user_meta_data->>'phone'
+    NEW.raw_user_meta_data->>'phone',
+    TRUE,   -- is_buyer: everyone starts as a buyer
+    FALSE,  -- is_seller: must be activated later
+    FALSE,  -- is_driver: must be activated later
+    FALSE   -- is_admin: must be granted by existing admin
   );
   
   -- Create wallet for user
   INSERT INTO public.wallets (user_id) VALUES (NEW.id);
-  
-  -- Create seller profile if role is seller
-  IF NEW.raw_user_meta_data->>'role' = 'seller' THEN
-    INSERT INTO public.seller_profiles (id, business_name)
-    VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'business_name', 'My Store'));
-  END IF;
-  
-  -- Create driver profile if role is driver
-  IF NEW.raw_user_meta_data->>'role' = 'driver' THEN
-    INSERT INTO public.driver_profiles (id)
-    VALUES (NEW.id);
-  END IF;
   
   RETURN NEW;
 END;
@@ -225,4 +239,8 @@ CREATE TRIGGER update_orders_updated_at
 
 CREATE TRIGGER update_wallets_updated_at
   BEFORE UPDATE ON wallets
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER update_disputes_updated_at
+  BEFORE UPDATE ON disputes
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();

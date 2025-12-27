@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { getPrimaryDashboard } from '@/lib/types/database';
 
 export type AuthActionResult = {
     error?: string;
@@ -30,21 +31,24 @@ export async function signIn(
         return { error: error.message };
     }
 
-    // Get user role and redirect accordingly
+    // Get user and profile for capability-based redirect
     const { data: { user } } = await supabase.auth.getUser();
 
     if (user) {
         const { data: profile } = await supabase
             .from('profiles')
-            .select('role')
+            .select('is_buyer, is_seller, is_driver, is_admin')
             .eq('id', user.id)
             .maybeSingle();
 
-        const role = profile?.role || 'buyer';
-        redirect(`/${locale}/${role}`);
+        if (profile) {
+            const dashboard = getPrimaryDashboard(profile);
+            redirect(`/${locale}/${dashboard}`);
+        }
     }
 
-    redirect(`/${locale}`);
+    // Fallback to buyer dashboard
+    redirect(`/${locale}/buyer`);
 }
 
 export async function signUp(
@@ -56,7 +60,7 @@ export async function signUp(
     const confirmPassword = formData.get('confirmPassword') as string;
     const fullName = formData.get('fullName') as string;
     const phone = formData.get('phone') as string;
-    const role = formData.get('role') as string || 'buyer';
+    // No role selection - all users start as buyers
 
     if (!email || !password) {
         return { error: 'Email and password are required' };
@@ -79,7 +83,7 @@ export async function signUp(
             data: {
                 full_name: fullName,
                 phone,
-                role,
+                // No role in metadata - trigger sets is_buyer=true by default
             },
         },
     });
@@ -89,8 +93,8 @@ export async function signUp(
     }
 
     if (data.user) {
-        // Profile is auto-created by trigger, just redirect
-        redirect(`/${locale}/${role}`);
+        // All new users go to buyer dashboard
+        redirect(`/${locale}/buyer`);
     }
 
     return { success: true };
@@ -108,7 +112,7 @@ export async function getSession() {
     return user;
 }
 
-export async function getUserRole(): Promise<string | null> {
+export async function getUserProfile() {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -116,9 +120,24 @@ export async function getUserRole(): Promise<string | null> {
 
     const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('*')
         .eq('id', user.id)
         .maybeSingle();
 
-    return profile?.role || null;
+    return profile;
+}
+
+export async function getUserCapabilities() {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) return null;
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_buyer, is_seller, is_driver, is_admin')
+        .eq('id', user.id)
+        .maybeSingle();
+
+    return profile;
 }

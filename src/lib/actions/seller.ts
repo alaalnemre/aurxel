@@ -3,12 +3,22 @@
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 
-export type ActionResult = {
+export type ActivationResult = {
     error?: string;
     success?: boolean;
 };
 
-export async function updateSellerProfile(formData: FormData): Promise<ActionResult> {
+// Activate seller capability for current user
+export async function activateSeller(
+    formData: FormData
+): Promise<ActivationResult> {
+    const businessName = formData.get('businessName') as string;
+    const businessAddress = formData.get('businessAddress') as string;
+
+    if (!businessName) {
+        return { error: 'Business name is required' };
+    }
+
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -16,50 +26,101 @@ export async function updateSellerProfile(formData: FormData): Promise<ActionRes
         return { error: 'Not authenticated' };
     }
 
-    const businessName = formData.get('business_name') as string;
-    const businessAddress = formData.get('business_address') as string;
-    const descriptionEn = formData.get('business_description_en') as string;
-    const descriptionAr = formData.get('business_description_ar') as string;
+    // Check if already a seller
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_seller')
+        .eq('id', user.id)
+        .maybeSingle();
 
-    if (!businessName || !businessAddress) {
-        return { error: 'Business name and address are required' };
+    if (profile?.is_seller) {
+        return { error: 'Already registered as a seller' };
+    }
+
+    // Start transaction: update profile and create seller_profile
+    const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ is_seller: true })
+        .eq('id', user.id);
+
+    if (profileError) {
+        return { error: 'Failed to activate seller capability' };
+    }
+
+    // Create seller profile
+    const { error: sellerError } = await supabase
+        .from('seller_profiles')
+        .insert({
+            id: user.id,
+            business_name: businessName,
+            business_address: businessAddress || null,
+        });
+
+    if (sellerError) {
+        // Rollback profile update
+        await supabase
+            .from('profiles')
+            .update({ is_seller: false })
+            .eq('id', user.id);
+        return { error: 'Failed to create seller profile' };
+    }
+
+    revalidatePath('/');
+    return { success: true };
+}
+
+// Update seller profile
+export async function updateSellerProfile(
+    formData: FormData
+): Promise<ActivationResult> {
+    const businessName = formData.get('businessName') as string;
+    const businessAddress = formData.get('businessAddress') as string;
+    const businessDescriptionEn = formData.get('businessDescriptionEn') as string;
+    const businessDescriptionAr = formData.get('businessDescriptionAr') as string;
+
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: 'Not authenticated' };
     }
 
     const { error } = await supabase
         .from('seller_profiles')
         .update({
             business_name: businessName,
-            business_address: businessAddress,
-            business_description_en: descriptionEn || null,
-            business_description_ar: descriptionAr || null,
+            business_address: businessAddress || null,
+            business_description_en: businessDescriptionEn || null,
+            business_description_ar: businessDescriptionAr || null,
         })
         .eq('id', user.id);
 
     if (error) {
-        console.error('[updateSellerProfile]', error);
-        return { error: error.message };
+        return { error: 'Failed to update seller profile' };
     }
 
-    revalidatePath('/seller');
+    revalidatePath('/');
     return { success: true };
 }
 
-export async function getSellerProducts() {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+// Create a new product
+export async function createProduct(
+    formData: FormData
+): Promise<ActivationResult> {
+    const nameEn = formData.get('nameEn') as string;
+    const nameAr = formData.get('nameAr') as string;
+    const descriptionEn = formData.get('descriptionEn') as string;
+    const descriptionAr = formData.get('descriptionAr') as string;
+    const price = parseFloat(formData.get('price') as string);
+    const compareAtPrice = formData.get('compareAtPrice') ? parseFloat(formData.get('compareAtPrice') as string) : null;
+    const stock = parseInt(formData.get('stock') as string) || 0;
+    const categoryId = formData.get('categoryId') as string;
+    const images = formData.getAll('images') as string[];
 
-    if (!user) return [];
+    if (!nameEn || !nameAr || isNaN(price)) {
+        return { error: 'Name and price are required' };
+    }
 
-    const { data: products } = await supabase
-        .from('products')
-        .select('*')
-        .eq('seller_id', user.id)
-        .order('created_at', { ascending: false });
-
-    return products || [];
-}
-
-export async function createProduct(formData: FormData): Promise<ActionResult> {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -67,15 +128,15 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
         return { error: 'Not authenticated' };
     }
 
-    const nameEn = formData.get('name_en') as string;
-    const nameAr = formData.get('name_ar') as string;
-    const price = parseFloat(formData.get('price') as string);
-    const stock = parseInt(formData.get('stock') as string);
-    const descriptionEn = formData.get('description_en') as string;
-    const descriptionAr = formData.get('description_ar') as string;
+    // Verify seller capability
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_seller')
+        .eq('id', user.id)
+        .maybeSingle();
 
-    if (!nameEn || !nameAr || isNaN(price) || isNaN(stock)) {
-        return { error: 'Missing required fields' };
+    if (!profile?.is_seller) {
+        return { error: 'Not authorized as seller' };
     }
 
     const { error } = await supabase
@@ -84,23 +145,30 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
             seller_id: user.id,
             name_en: nameEn,
             name_ar: nameAr,
-            price,
-            stock,
             description_en: descriptionEn || null,
             description_ar: descriptionAr || null,
+            price,
+            compare_at_price: compareAtPrice,
+            stock,
+            category_id: categoryId || null,
+            images: images || [],
             is_active: true,
         });
 
     if (error) {
         console.error('[createProduct]', error);
-        return { error: error.message };
+        return { error: 'Failed to create product' };
     }
 
     revalidatePath('/seller/products');
     return { success: true };
 }
 
-export async function updateProduct(productId: string, formData: FormData): Promise<ActionResult> {
+// Toggle product active status
+export async function toggleProductStatus(
+    productId: string,
+    newStatus?: boolean
+): Promise<ActivationResult> {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -108,39 +176,53 @@ export async function updateProduct(productId: string, formData: FormData): Prom
         return { error: 'Not authenticated' };
     }
 
-    const updates: Record<string, unknown> = {};
+    // Get current product status if newStatus not provided
+    let targetStatus = newStatus;
+    if (targetStatus === undefined) {
+        const { data: product } = await supabase
+            .from('products')
+            .select('is_active, seller_id')
+            .eq('id', productId)
+            .maybeSingle();
 
-    const fields = ['name_en', 'name_ar', 'description_en', 'description_ar'];
-    fields.forEach(field => {
-        const value = formData.get(field);
-        if (value !== null) updates[field] = value;
-    });
+        if (!product) {
+            return { error: 'Product not found' };
+        }
 
-    const price = formData.get('price');
-    if (price) updates.price = parseFloat(price as string);
+        if (product.seller_id !== user.id) {
+            return { error: 'Not authorized' };
+        }
 
-    const stock = formData.get('stock');
-    if (stock) updates.stock = parseInt(stock as string);
-
-    const isActive = formData.get('is_active');
-    if (isActive !== null) updates.is_active = isActive === 'true';
+        targetStatus = !product.is_active;
+    }
 
     const { error } = await supabase
         .from('products')
-        .update(updates)
+        .update({ is_active: targetStatus })
         .eq('id', productId)
         .eq('seller_id', user.id);
 
     if (error) {
-        console.error('[updateProduct]', error);
-        return { error: error.message };
+        return { error: 'Failed to toggle product status' };
     }
 
     revalidatePath('/seller/products');
     return { success: true };
 }
 
-export async function toggleProductStatus(productId: string, isActive: boolean): Promise<ActionResult> {
+// Update an existing product
+export async function updateProduct(
+    productId: string,
+    formData: FormData
+): Promise<ActivationResult> {
+    const nameEn = formData.get('nameEn') as string;
+    const nameAr = formData.get('nameAr') as string;
+    const descriptionEn = formData.get('descriptionEn') as string;
+    const descriptionAr = formData.get('descriptionAr') as string;
+    const price = parseFloat(formData.get('price') as string);
+    const compareAtPrice = formData.get('compareAtPrice') ? parseFloat(formData.get('compareAtPrice') as string) : null;
+    const stock = parseInt(formData.get('stock') as string) || 0;
+
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -150,14 +232,138 @@ export async function toggleProductStatus(productId: string, isActive: boolean):
 
     const { error } = await supabase
         .from('products')
-        .update({ is_active: isActive })
+        .update({
+            name_en: nameEn,
+            name_ar: nameAr,
+            description_en: descriptionEn || null,
+            description_ar: descriptionAr || null,
+            price,
+            compare_at_price: compareAtPrice,
+            stock,
+        })
         .eq('id', productId)
         .eq('seller_id', user.id);
 
     if (error) {
-        return { error: error.message };
+        return { error: 'Failed to update product' };
     }
 
     revalidatePath('/seller/products');
+    return { success: true };
+}
+
+// Delete a product
+export async function deleteProduct(
+    productId: string
+): Promise<ActivationResult> {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: 'Not authenticated' };
+    }
+
+    const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', productId)
+        .eq('seller_id', user.id);
+
+    if (error) {
+        return { error: 'Failed to delete product' };
+    }
+
+    revalidatePath('/seller/products');
+    return { success: true };
+}
+
+// Accept an order (seller)
+export async function acceptOrder(
+    orderId: string
+): Promise<ActivationResult> {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: 'Not authenticated' };
+    }
+
+    const { error } = await supabase
+        .from('orders')
+        .update({ status: 'accepted' })
+        .eq('id', orderId)
+        .eq('seller_id', user.id)
+        .eq('status', 'placed');
+
+    if (error) {
+        return { error: 'Failed to accept order' };
+    }
+
+    revalidatePath('/seller/orders');
+    return { success: true };
+}
+
+// Mark order as preparing
+export async function markPreparing(
+    orderId: string
+): Promise<ActivationResult> {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: 'Not authenticated' };
+    }
+
+    const { error } = await supabase
+        .from('orders')
+        .update({ status: 'preparing' })
+        .eq('id', orderId)
+        .eq('seller_id', user.id)
+        .eq('status', 'accepted');
+
+    if (error) {
+        return { error: 'Failed to update order' };
+    }
+
+    revalidatePath('/seller/orders');
+    return { success: true };
+}
+
+// Mark order as ready for pickup
+export async function markReady(
+    orderId: string
+): Promise<ActivationResult> {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: 'Not authenticated' };
+    }
+
+    // Update order to ready
+    const { error: orderError } = await supabase
+        .from('orders')
+        .update({ status: 'ready' })
+        .eq('id', orderId)
+        .eq('seller_id', user.id)
+        .eq('status', 'preparing');
+
+    if (orderError) {
+        return { error: 'Failed to update order' };
+    }
+
+    // Create delivery record
+    const { error: deliveryError } = await supabase
+        .from('deliveries')
+        .insert({
+            order_id: orderId,
+            status: 'available',
+        });
+
+    if (deliveryError) {
+        console.error('[markReady] Failed to create delivery:', deliveryError);
+    }
+
+    revalidatePath('/seller/orders');
     return { success: true };
 }

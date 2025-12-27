@@ -1,4 +1,5 @@
-export type UserRole = 'buyer' | 'seller' | 'driver' | 'admin';
+// Database types for JordanMarket
+// Using capability flags instead of single role
 
 export type OrderStatus =
     | 'placed'
@@ -17,12 +18,24 @@ export type DeliveryStatus =
     | 'delivered'
     | 'cancelled';
 
+export type DisputeStatus =
+    | 'open'
+    | 'under_review'
+    | 'resolved'
+    | 'closed';
+
+export type TransactionType = 'topup' | 'payment' | 'refund' | 'payout';
+
 export interface Profile {
     id: string;
-    role: UserRole;
     full_name: string | null;
     phone: string | null;
     avatar_url: string | null;
+    // Capability flags
+    is_buyer: boolean;
+    is_seller: boolean;
+    is_driver: boolean;
+    is_admin: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -73,6 +86,8 @@ export interface Product {
     stock: number;
     images: string[];
     is_active: boolean;
+    is_sponsored: boolean;
+    sponsored_until: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -87,6 +102,10 @@ export interface Order {
     delivery_address: string;
     delivery_phone: string;
     notes: string | null;
+    // Monetization fields (set on completion)
+    platform_fee: number | null;
+    seller_payout: number | null;
+    platform_fee_rate: number | null;
     created_at: string;
     updated_at: string;
 }
@@ -107,6 +126,7 @@ export interface Delivery {
     picked_up_at: string | null;
     delivered_at: string | null;
     cash_collected: number | null;
+    tip_amount: number;
     created_at: string;
 }
 
@@ -131,7 +151,7 @@ export interface TopupCode {
 export interface WalletTransaction {
     id: string;
     wallet_id: string;
-    type: 'topup' | 'payment' | 'refund' | 'payout';
+    type: TransactionType;
     amount: number;
     reference_id: string | null;
     description: string | null;
@@ -147,4 +167,51 @@ export interface Review {
     rating: number;
     comment: string | null;
     created_at: string;
+}
+
+export interface Dispute {
+    id: string;
+    order_id: string;
+    raised_by: string;
+    assigned_to: string | null;
+    status: DisputeStatus;
+    reason: string;
+    resolution: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+// Utility type for profile with expanded relations
+export interface ProfileWithDetails extends Profile {
+    seller_profile?: SellerProfile | null;
+    driver_profile?: DriverProfile | null;
+    wallet?: Wallet | null;
+}
+
+// Type for capability flags only
+export type Capabilities = Pick<Profile, 'is_buyer' | 'is_seller' | 'is_driver' | 'is_admin'>;
+
+// Helper function to get primary dashboard route based on capabilities
+export function getPrimaryDashboard(capabilities: Capabilities): string {
+    // Priority: admin > seller > driver > buyer
+    if (capabilities.is_admin) return 'admin';
+    if (capabilities.is_seller) return 'seller';
+    if (capabilities.is_driver) return 'driver';
+    return 'buyer';
+}
+
+// Helper function to check if user has capability for a route
+export function hasCapabilityForRoute(capabilities: Capabilities, route: string): boolean {
+    switch (route) {
+        case 'admin':
+            return capabilities.is_admin;
+        case 'seller':
+            return capabilities.is_seller;
+        case 'driver':
+            return capabilities.is_driver;
+        case 'buyer':
+            return capabilities.is_buyer;
+        default:
+            return true; // Public routes
+    }
 }
