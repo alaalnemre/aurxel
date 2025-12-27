@@ -1,3 +1,6 @@
+// src/lib/supabase/middleware.ts
+// Supabase middleware utilities for session refresh
+
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -29,8 +32,11 @@ export async function updateSession(request: NextRequest) {
         }
     );
 
-    // Important: Do not remove this line
-    // It refreshes the session if expired
+    // IMPORTANT: Do not add logic between createServerClient and
+    // supabase.auth.getUser(). Simple mistakes could make it very hard to debug
+    // unexpected behaviors.
+
+    // Refreshing the auth token
     await supabase.auth.getUser();
 
     return supabaseResponse;

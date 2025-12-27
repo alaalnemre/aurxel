@@ -1,143 +1,224 @@
+// src/lib/actions/auth.ts
+// Server actions for authentication
+
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
-import { getPrimaryDashboard } from '@/lib/types/database';
+import { createClient, getUser } from '@/lib/supabase/server';
+import { registerSchema, loginSchema, type RegisterInput, type LoginInput } from '@/lib/validations/auth';
+import type { Profile } from '@/lib/types/database';
 
-export type AuthActionResult = {
+// ============================================
+// RESULT TYPES
+// ============================================
+
+export type AuthResult = {
+    success: boolean;
     error?: string;
-    success?: boolean;
+    redirectTo?: string;
 };
 
-export async function signIn(
-    locale: string,
-    formData: FormData
-): Promise<AuthActionResult> {
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
+export type ProfileResult = {
+    success: boolean;
+    profile?: Profile;
+    error?: string;
+};
 
-    if (!email || !password) {
-        return { error: 'Email and password are required' };
+// ============================================
+// REGISTER USER
+// ============================================
+
+export async function registerUser(input: RegisterInput): Promise<AuthResult> {
+    // Validate input
+    const parsed = registerSchema.safeParse(input);
+    if (!parsed.success) {
+        return {
+            success: false,
+            error: parsed.error.issues[0]?.message || 'Invalid input',
+        };
     }
 
+    const { email, password, fullName } = parsed.data;
+
+    // Create Supabase client
     const supabase = await createClient();
 
-    const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-    });
-
-    if (error) {
-        return { error: error.message };
-    }
-
-    // Get user and profile for capability-based redirect
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (user) {
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('is_buyer, is_seller, is_driver, is_admin')
-            .eq('id', user.id)
-            .maybeSingle();
-
-        if (profile) {
-            const dashboard = getPrimaryDashboard(profile);
-            redirect(`/${locale}/${dashboard}`);
-        }
-    }
-
-    // Fallback to buyer dashboard
-    redirect(`/${locale}/buyer`);
-}
-
-export async function signUp(
-    locale: string,
-    formData: FormData
-): Promise<AuthActionResult> {
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
-    const confirmPassword = formData.get('confirmPassword') as string;
-    const fullName = formData.get('fullName') as string;
-    const phone = formData.get('phone') as string;
-    // No role selection - all users start as buyers
-
-    if (!email || !password) {
-        return { error: 'Email and password are required' };
-    }
-
-    if (password !== confirmPassword) {
-        return { error: 'Passwords do not match' };
-    }
-
-    if (password.length < 6) {
-        return { error: 'Password must be at least 6 characters' };
-    }
-
-    const supabase = await createClient();
-
+    // Sign up with Supabase Auth
     const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
             data: {
                 full_name: fullName,
-                phone,
-                // No role in metadata - trigger sets is_buyer=true by default
             },
         },
     });
 
     if (error) {
-        return { error: error.message };
+        console.error('[registerUser] Supabase error:', error.message);
+        return {
+            success: false,
+            error: error.message,
+        };
     }
 
-    if (data.user) {
-        // All new users go to buyer dashboard
-        redirect(`/${locale}/buyer`);
+    if (!data.user) {
+        return {
+            success: false,
+            error: 'Failed to create user',
+        };
     }
 
-    return { success: true };
+    // Check if email confirmation is required
+    if (data.user.identities?.length === 0) {
+        return {
+            success: false,
+            error: 'Email already registered',
+        };
+    }
+
+    // Success - profile is auto-created by database trigger
+    return {
+        success: true,
+        redirectTo: '/buyer',
+    };
 }
 
-export async function signOut(locale: string) {
+// ============================================
+// LOGIN USER
+// ============================================
+
+export async function loginUser(input: LoginInput): Promise<AuthResult> {
+    // Validate input
+    const parsed = loginSchema.safeParse(input);
+    if (!parsed.success) {
+        return {
+            success: false,
+            error: parsed.error.issues[0]?.message || 'Invalid input',
+        };
+    }
+
+    const { email, password } = parsed.data;
+
+    // Create Supabase client
     const supabase = await createClient();
-    await supabase.auth.signOut();
-    redirect(`/${locale}`);
+
+    // Sign in with Supabase Auth
+    const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+    });
+
+    if (error) {
+        console.error('[loginUser] Supabase error:', error.message);
+        return {
+            success: false,
+            error: error.message,
+        };
+    }
+
+    if (!data.user) {
+        return {
+            success: false,
+            error: 'Failed to sign in',
+        };
+    }
+
+    // Fetch profile to determine redirect
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+    if (profileError) {
+        console.error('[loginUser] Profile fetch error:', profileError.message);
+        // Still logged in, just redirect to buyer
+        return {
+            success: true,
+            redirectTo: '/buyer',
+        };
+    }
+
+    // Determine redirect based on capabilities
+    let redirectTo = '/buyer';
+    if (profile) {
+        if (profile.is_admin) {
+            redirectTo = '/admin';
+        } else if (profile.is_seller) {
+            redirectTo = '/seller';
+        } else if (profile.is_driver) {
+            redirectTo = '/driver';
+        }
+    }
+
+    return {
+        success: true,
+        redirectTo,
+    };
 }
 
-export async function getSession() {
+// ============================================
+// LOGOUT USER
+// ============================================
+
+export async function logoutUser(): Promise<AuthResult> {
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    return user;
+
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+        console.error('[logoutUser] Supabase error:', error.message);
+        return {
+            success: false,
+            error: error.message,
+        };
+    }
+
+    return {
+        success: true,
+        redirectTo: '/login',
+    };
 }
 
-export async function getUserProfile() {
+// ============================================
+// GET CURRENT PROFILE
+// ============================================
+
+export async function getCurrentProfile(): Promise<ProfileResult> {
+    const user = await getUser();
+
+    if (!user) {
+        return {
+            success: false,
+            error: 'Not authenticated',
+        };
+    }
+
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) return null;
-
-    const { data: profile } = await supabase
+    const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .maybeSingle();
 
-    return profile;
-}
+    if (error) {
+        console.error('[getCurrentProfile] Supabase error:', error.message);
+        return {
+            success: false,
+            error: error.message,
+        };
+    }
 
-export async function getUserCapabilities() {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    if (!profile) {
+        return {
+            success: false,
+            error: 'Profile not found',
+        };
+    }
 
-    if (!user) return null;
-
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('is_buyer, is_seller, is_driver, is_admin')
-        .eq('id', user.id)
-        .maybeSingle();
-
-    return profile;
+    return {
+        success: true,
+        profile: profile as Profile,
+    };
 }

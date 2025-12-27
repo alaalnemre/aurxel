@@ -1,79 +1,52 @@
-import type { Metadata } from "next";
+// src/app/[locale]/layout.tsx
+// Root layout for locale-specific pages with RTL/LTR support
+
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
-import { Geist, Geist_Mono } from "next/font/google";
-import { locales, type Locale } from '@/i18n/config';
-import { CartProvider } from '@/lib/hooks/useCart';
-import "../globals.css";
-
-const geistSans = Geist({
-    variable: "--font-geist-sans",
-    subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-    variable: "--font-geist-mono",
-    subsets: ["latin"],
-});
+import { locales, localeDirections, type Locale } from '@/i18n/config';
+import '../globals.css';
 
 export const metadata: Metadata = {
-    title: "JordanMarket - سوق الأردن",
-    description: "Shop local, support Jordan. Your trusted Jordanian marketplace.",
+    title: 'JordanMarket',
+    description: 'Your local marketplace in Jordan',
 };
 
+// Generate static params for all locales
 export function generateStaticParams() {
     return locales.map((locale) => ({ locale }));
 }
 
-export default async function LocaleLayout({
-    children,
-    params,
-}: {
+type Props = {
     children: React.ReactNode;
     params: Promise<{ locale: string }>;
-}) {
+};
+
+export default async function LocaleLayout({ children, params }: Props) {
     const { locale } = await params;
+
+    // Validate locale
+    if (!locales.includes(locale as Locale)) {
+        notFound();
+    }
+
+    // Enable static rendering
     setRequestLocale(locale);
 
+    // Get messages for the locale
     const messages = await getMessages();
-    const direction = locale === 'ar' ? 'rtl' : 'ltr';
+
+    // Determine text direction
+    const direction = localeDirections[locale as Locale];
 
     return (
         <html lang={locale} dir={direction} suppressHydrationWarning>
-            <head>
-                <script
-                    dangerouslySetInnerHTML={{
-                        __html: `
-                            (function() {
-                                try {
-                                    const theme = localStorage.getItem('theme');
-                                    const root = document.documentElement;
-                                    if (theme === 'dark') {
-                                        root.classList.add('dark');
-                                        root.setAttribute('data-theme', 'dark');
-                                    } else if (theme === 'light') {
-                                        root.classList.remove('dark');
-                                        root.setAttribute('data-theme', 'light');
-                                    } else {
-                                        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                                        root.classList.toggle('dark', isDark);
-                                    }
-                                } catch (e) {}
-                            })();
-                        `,
-                    }}
-                />
-            </head>
-            <body
-                className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background text-foreground`}
-            >
+            <body className="min-h-screen antialiased">
                 <NextIntlClientProvider messages={messages}>
-                    <CartProvider>
-                        {children}
-                    </CartProvider>
+                    {children}
                 </NextIntlClientProvider>
             </body>
         </html>
     );
 }
-
