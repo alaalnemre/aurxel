@@ -1,16 +1,14 @@
 // src/components/auth/LoginForm.tsx
-// Client component for login form with server action integration
+// Minimal client component for login form
 
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/navigation';
 import { Link } from '@/i18n/navigation';
 import { loginUser } from '@/actions';
 
 export function LoginForm() {
-    const t = useTranslations('auth');
     const router = useRouter();
     const [isPending, startTransition] = useTransition();
     const [error, setError] = useState<string | null>(null);
@@ -29,7 +27,7 @@ export function LoginForm() {
                 return;
             }
 
-            // Redirect to appropriate dashboard
+            // Redirect based on capabilities
             if (result.redirectTo) {
                 router.push(result.redirectTo);
                 router.refresh();
@@ -41,7 +39,7 @@ export function LoginForm() {
         <div className="w-full max-w-md">
             <div className="rounded-2xl bg-white p-8 shadow-xl dark:bg-gray-900">
                 <h1 className="mb-6 text-center text-2xl font-bold text-gray-900 dark:text-white">
-                    {t('loginTitle')}
+                    Sign In
                 </h1>
 
                 {/* Error Message */}
@@ -58,7 +56,7 @@ export function LoginForm() {
                             htmlFor="email"
                             className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
                         >
-                            {t('email')}
+                            Email
                         </label>
                         <input
                             type="email"
@@ -66,7 +64,7 @@ export function LoginForm() {
                             name="email"
                             required
                             disabled={isPending}
-                            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+                            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                             placeholder="email@example.com"
                         />
                     </div>
@@ -77,7 +75,7 @@ export function LoginForm() {
                             htmlFor="password"
                             className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
                         >
-                            {t('password')}
+                            Password
                         </label>
                         <input
                             type="password"
@@ -85,39 +83,29 @@ export function LoginForm() {
                             name="password"
                             required
                             disabled={isPending}
-                            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+                            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                             placeholder="••••••••"
                         />
-                    </div>
-
-                    {/* Forgot Password */}
-                    <div className="text-end">
-                        <a
-                            href="#"
-                            className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                        >
-                            {t('forgotPassword')}
-                        </a>
                     </div>
 
                     {/* Submit Button */}
                     <button
                         type="submit"
                         disabled={isPending}
-                        className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                     >
-                        {isPending ? '...' : t('loginButton')}
+                        {isPending ? 'Signing in...' : 'Sign In'}
                     </button>
                 </form>
 
                 {/* Sign Up Link */}
                 <p className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
-                    {t('noAccount')}{' '}
+                    Don&apos;t have an account?{' '}
                     <Link
                         href="/register"
                         className="font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400"
                     >
-                        {t('signUpLink')}
+                        Register
                     </Link>
                 </p>
             </div>

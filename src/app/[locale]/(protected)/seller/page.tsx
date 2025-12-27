@@ -1,99 +1,94 @@
 // src/app/[locale]/(protected)/seller/page.tsx
-// Seller dashboard page
+// Seller status page - shows seller profile status
 
-import { useTranslations } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
-import { getUser } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+import { createClient, getUser } from '@/lib/supabase/server';
 
 type Props = {
     params: Promise<{ locale: string }>;
 };
 
-export default async function SellerDashboard({ params }: Props) {
+export default async function SellerPage({ params }: Props) {
     const { locale } = await params;
     setRequestLocale(locale);
 
+    // Auth guard
     const user = await getUser();
+    if (!user) {
+        redirect(`/${locale}/login`);
+    }
 
-    return <SellerContent userEmail={user?.email || 'Seller'} />;
-}
+    const supabase = await createClient();
 
-function SellerContent({ userEmail }: { userEmail: string }) {
-    const t = useTranslations('dashboard.seller');
-    const tHealth = useTranslations('healthCheck');
+    // Fetch seller profile
+    const { data: sellerProfile } = await supabase
+        .from('seller_profiles')
+        .select('store_name, store_description, status, created_at')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    if (!sellerProfile) {
+        return (
+            <div className="p-6">
+                <h1 className="text-2xl font-bold">Seller Dashboard</h1>
+                <p className="mt-4 text-gray-600">
+                    You have not applied to become a seller yet.
+                </p>
+            </div>
+        );
+    }
 
     return (
-        <div className="space-y-8">
-            {/* Welcome Section */}
-            <div className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 p-8 text-white shadow-lg">
-                <h1 className="text-3xl font-bold">{t('title')}</h1>
-                <p className="mt-2 text-emerald-100">
-                    {t('welcome', { name: userEmail.split('@')[0] })}
+        <div className="space-y-6 p-6">
+            <h1 className="text-2xl font-bold">Seller Dashboard</h1>
+
+            <div className="rounded-lg border p-4">
+                <h2 className="mb-2 font-semibold">Seller Profile</h2>
+                <p><strong>Store Name:</strong> {sellerProfile.store_name}</p>
+                {sellerProfile.store_description && (
+                    <p><strong>Description:</strong> {sellerProfile.store_description}</p>
+                )}
+                <p>
+                    <strong>Status:</strong>{' '}
+                    <StatusBadge status={sellerProfile.status} />
+                </p>
+                <p className="mt-2 text-sm text-gray-500">
+                    Applied: {new Date(sellerProfile.created_at).toLocaleDateString()}
                 </p>
             </div>
 
-            {/* Dashboard Grid */}
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                <DashboardCard
-                    title="Products"
-                    value="0"
-                    subtitle="Active listings"
-                    icon="📦"
-                />
-                <DashboardCard
-                    title="Orders"
-                    value="0"
-                    subtitle="Pending"
-                    icon="📋"
-                />
-                <DashboardCard
-                    title="Revenue"
-                    value="0 JOD"
-                    subtitle="This month"
-                    icon="💵"
-                />
-                <DashboardCard
-                    title="Rating"
-                    value="—"
-                    subtitle="No reviews yet"
-                    icon="⭐"
-                />
-            </div>
+            {sellerProfile.status === 'pending' && (
+                <div className="rounded-lg bg-yellow-50 p-4 text-yellow-800">
+                    Your seller application is pending review. We will notify you once approved.
+                </div>
+            )}
 
-            {/* Health Check Badge */}
-            <div className="rounded-lg bg-green-100 p-4 text-sm text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                <p>✅ {tHealth('serverRendering')}</p>
-                <p>✅ {tHealth('sessionStatus', { status: 'Authenticated as Seller' })}</p>
-            </div>
+            {sellerProfile.status === 'rejected' && (
+                <div className="rounded-lg bg-red-50 p-4 text-red-800">
+                    Your seller application was rejected. Please contact support for more information.
+                </div>
+            )}
+
+            {sellerProfile.status === 'approved' && (
+                <div className="rounded-lg bg-green-50 p-4 text-green-800">
+                    Your seller account is active! You can start adding products.
+                </div>
+            )}
         </div>
     );
 }
 
-function DashboardCard({
-    title,
-    value,
-    subtitle,
-    icon,
-}: {
-    title: string;
-    value: string;
-    subtitle: string;
-    icon: string;
-}) {
+function StatusBadge({ status }: { status: string }) {
+    const colors: Record<string, string> = {
+        pending: 'bg-yellow-100 text-yellow-800',
+        approved: 'bg-green-100 text-green-800',
+        rejected: 'bg-red-100 text-red-800',
+    };
+
     return (
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                        {title}
-                    </p>
-                    <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
-                        {value}
-                    </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>
-                </div>
-                <span className="text-3xl">{icon}</span>
-            </div>
-        </div>
+        <span className={`inline-block rounded px-2 py-1 text-sm ${colors[status] || colors.pending}`}>
+            {status.charAt(0).toUpperCase() + status.slice(1)}
+        </span>
     );
 }
