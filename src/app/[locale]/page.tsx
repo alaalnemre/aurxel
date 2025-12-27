@@ -3,6 +3,18 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { Header } from '@/components/layout/Header';
 import { createClient } from '@/lib/supabase/server';
+import {
+    Store,
+    CreditCard,
+    Truck,
+    Shield,
+    Heart,
+    DollarSign,
+    Zap,
+    Package,
+    ImageIcon,
+    ArrowRight,
+} from 'lucide-react';
 
 export default async function HomePage({
     params,
@@ -58,7 +70,7 @@ function HeroSection({ locale }: { locale: string }) {
                 <div className="max-w-4xl mx-auto text-center">
                     {/* Badge */}
                     <div className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-success-soft text-success text-xs sm:text-sm font-medium mb-4 sm:mb-6 animate-fadeIn">
-                        <span>🇯🇴</span>
+                        <Store className="w-4 h-4" />
                         <span>{isRTL ? 'سوق أردني 100%' : '100% Jordanian Marketplace'}</span>
                     </div>
 
@@ -88,9 +100,7 @@ function HeroSection({ locale }: { locale: string }) {
                             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 sm:px-8 py-3.5 sm:py-4 bg-accent hover:bg-accent-hover text-white font-semibold rounded-xl transition-all duration-300 hover:scale-[1.02] shadow-lg hover:shadow-xl min-h-[48px]"
                         >
                             {isRTL ? 'ابدأ التسوق' : 'Start Shopping'}
-                            <svg className={`w-5 h-5 ${isRTL ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                            </svg>
+                            <ArrowRight className={`w-5 h-5 ${isRTL ? 'rotate-180' : ''}`} />
                         </Link>
                         <Link
                             href={`/${locale}/register`}
@@ -112,10 +122,10 @@ function TrustStrip({ locale }: { locale: string }) {
     const isRTL = locale === 'ar';
 
     const trustItems = [
-        { icon: '🇯🇴', label: isRTL ? 'بائعين أردنيين' : 'Jordanian Sellers' },
-        { icon: '💵', label: isRTL ? 'دفع عند الاستلام' : 'Cash on Delivery' },
-        { icon: '🚚', label: isRTL ? 'توصيل سريع' : 'Fast Delivery' },
-        { icon: '🔒', label: isRTL ? 'تسوق آمن' : 'Secure Shopping' },
+        { icon: Store, label: isRTL ? 'بائعين أردنيين' : 'Jordanian Sellers' },
+        { icon: CreditCard, label: isRTL ? 'دفع عند الاستلام' : 'Cash on Delivery' },
+        { icon: Truck, label: isRTL ? 'توصيل سريع' : 'Fast Delivery' },
+        { icon: Shield, label: isRTL ? 'تسوق آمن' : 'Secure Shopping' },
     ];
 
     return (
@@ -124,7 +134,7 @@ function TrustStrip({ locale }: { locale: string }) {
                 <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 lg:gap-12">
                     {trustItems.map((item, i) => (
                         <div key={i} className="flex items-center gap-2 text-text-secondary">
-                            <span className="text-lg sm:text-xl">{item.icon}</span>
+                            <item.icon className="w-4 h-4 sm:w-5 sm:h-5 text-accent" />
                             <span className="text-xs sm:text-sm font-medium">{item.label}</span>
                         </div>
                     ))}
@@ -188,9 +198,7 @@ function FeaturedSection({ locale, products }: { locale: string; products: Produ
                         className="inline-flex items-center gap-2 px-6 py-3 text-accent hover:text-accent-hover font-medium transition-colors min-h-[44px]"
                     >
                         {isRTL ? 'عرض جميع المنتجات' : 'View All Products'}
-                        <svg className={`w-4 h-4 ${isRTL ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
+                        <ArrowRight className={`w-4 h-4 ${isRTL ? 'rotate-180' : ''}`} />
                     </Link>
                 </div>
             </div>
@@ -219,15 +227,14 @@ function ProductCard({ product, locale, index }: { product: Product; locale: str
                     />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center text-text-muted">
-                        <svg className="w-12 h-12 sm:w-16 sm:h-16 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
+                        <ImageIcon className="w-12 h-12 sm:w-16 sm:h-16 opacity-30" />
                     </div>
                 )}
 
                 {/* Sponsored badge */}
                 {product.is_sponsored && (
-                    <span className="absolute top-2 left-2 px-2 py-1 bg-warning/90 text-white text-[10px] sm:text-xs font-medium rounded-md">
+                    <span className="absolute top-2 left-2 px-2 py-1 bg-warning/90 text-white text-[10px] sm:text-xs font-medium rounded-md flex items-center gap-1">
+                        <Zap className="w-3 h-3" />
                         {isRTL ? 'مميز' : 'Sponsored'}
                     </span>
                 )}
@@ -262,21 +269,21 @@ function WhySection({ locale }: { locale: string }) {
 
     const reasons = [
         {
-            icon: '🏪',
+            icon: Heart,
             title: isRTL ? 'ادعم المحلي' : 'Support Local',
             description: isRTL
                 ? 'كل عملية شراء تدعم عائلة أردنية ومجتمعك المحلي'
                 : 'Every purchase supports a Jordanian family and your local community',
         },
         {
-            icon: '💰',
+            icon: DollarSign,
             title: isRTL ? 'أسعار عادلة' : 'Fair Prices',
             description: isRTL
                 ? 'بدون وسطاء — اشتري مباشرة من البائعين المحليين'
                 : 'No middlemen — buy directly from local sellers',
         },
         {
-            icon: '🚀',
+            icon: Truck,
             title: isRTL ? 'توصيل موثوق' : 'Reliable Delivery',
             description: isRTL
                 ? 'توصيل سريع من سائقين محليين موثوقين'
@@ -297,7 +304,7 @@ function WhySection({ locale }: { locale: string }) {
                     {reasons.map((reason, i) => (
                         <div key={i} className="text-center">
                             <div className="w-14 h-14 sm:w-16 sm:h-16 mx-auto mb-4 rounded-2xl bg-accent-soft flex items-center justify-center">
-                                <span className="text-2xl sm:text-3xl">{reason.icon}</span>
+                                <reason.icon className="w-6 h-6 sm:w-7 sm:h-7 text-accent" />
                             </div>
                             <h3 className="text-lg sm:text-xl font-semibold mb-2">{reason.title}</h3>
                             <p className="text-text-secondary text-sm sm:text-base leading-relaxed">
@@ -342,6 +349,7 @@ function FinalCTA({ locale }: { locale: string }) {
                             href={`/${locale}/products`}
                             className="inline-flex items-center justify-center gap-2 px-6 sm:px-8 py-3.5 sm:py-4 bg-white text-accent font-semibold rounded-xl hover:bg-white/90 transition-all duration-300 hover:scale-[1.02] min-h-[48px]"
                         >
+                            <Package className="w-5 h-5" />
                             {isRTL ? 'استكشف المنتجات' : 'Explore Products'}
                         </Link>
                     </div>

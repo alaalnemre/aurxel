@@ -1,29 +1,32 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useParams, usePathname, useRouter } from 'next/navigation';
+import { Globe } from 'lucide-react';
 
-export function LanguageToggle({ locale }: { locale: string }) {
+export function LanguageToggle() {
+    const params = useParams();
     const pathname = usePathname();
+    const router = useRouter();
 
-    // Get the path without locale prefix
-    const pathWithoutLocale = pathname.replace(/^\/(en|ar)/, '') || '/';
+    const currentLocale = params.locale as string;
+    const targetLocale = currentLocale === 'ar' ? 'en' : 'ar';
 
-    const targetLocale = locale === 'ar' ? 'en' : 'ar';
-    const targetPath = `/${targetLocale}${pathWithoutLocale}`;
+    const handleToggle = () => {
+        const newPath = pathname.replace(`/${currentLocale}`, `/${targetLocale}`);
+        router.push(newPath);
+    };
 
     return (
-        <Link
-            href={targetPath}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-muted hover:bg-border transition-colors"
-            title={locale === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'}
+        <button
+            onClick={handleToggle}
+            className="p-2 hover:bg-bg-muted rounded-lg transition-colors flex items-center gap-1.5"
+            aria-label={`Switch to ${targetLocale === 'ar' ? 'Arabic' : 'English'}`}
+            title={targetLocale === 'ar' ? 'العربية' : 'English'}
         >
-            <span className="text-lg">
-                {targetLocale === 'ar' ? '🇯🇴' : '🇬🇧'}
+            <Globe className="w-5 h-5" />
+            <span className="text-xs font-medium uppercase hidden sm:inline">
+                {targetLocale}
             </span>
-            <span className="text-sm font-medium">
-                {targetLocale === 'ar' ? 'عربي' : 'EN'}
-            </span>
-        </Link>
+        </button>
     );
 }
