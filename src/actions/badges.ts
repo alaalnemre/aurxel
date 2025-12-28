@@ -1,6 +1,10 @@
 'use server';
 
-import { createClient, getProfile } from '@/lib/supabase/server';
+import {
+    createClient as createUserClient,
+    createAdminClient,
+    getProfile
+} from '@/lib/supabase/server';
 import { Database } from '@/lib/database.types';
 import { createNotification } from './notifications';
 
@@ -28,7 +32,7 @@ export async function getProfileBadges(profileId: string): Promise<{
     data?: ProfileBadgeWithDetails[];
     error?: string;
 }> {
-    const supabase = await createClient();
+    const supabase = await createUserClient();
 
     const { data, error } = await supabase
         .from('profile_badges')
@@ -77,7 +81,7 @@ export async function evaluateBuyerBadges(profileId: string): Promise<{
     awarded?: string[];
     error?: string;
 }> {
-    const supabase = await createClient();
+    const supabase = await createUserClient();
     const awarded: string[] = [];
 
     // Get buyer stats
@@ -130,7 +134,7 @@ export async function evaluateSellerBadges(sellerId: string): Promise<{
     awarded?: string[];
     error?: string;
 }> {
-    const supabase = await createClient();
+    const supabase = await createUserClient();
     const awarded: string[] = [];
 
     // Get seller profile_id
@@ -200,7 +204,7 @@ export async function evaluateDriverBadges(driverProfileId: string): Promise<{
     awarded?: string[];
     error?: string;
 }> {
-    const supabase = await createClient();
+    const supabase = await createUserClient();
     const awarded: string[] = [];
 
     // Get driver deliveries
@@ -257,7 +261,6 @@ export async function evaluateDriverBadges(driverProfileId: string): Promise<{
 // =====================================================
 // HELPER: AWARD BADGE
 // =====================================================
-import { createAdminClient, createClient, getProfile } from '@/lib/supabase/server';
 
 async function awardBadge(profileId: string, badgeKey: string, reason: string): Promise<boolean> {
     // Use Admin Client to bypass RLS for awarding badges (often cross-user trigger)
@@ -323,7 +326,7 @@ export async function getAllBadges(): Promise<{
         return { success: false, error: 'Unauthorized' };
     }
 
-    const supabase = await createClient();
+    const supabase = await createUserClient();
     const { data, error } = await supabase
         .from('badges')
         .select('*')
@@ -348,7 +351,7 @@ export async function enableBadge(id: string): Promise<{ success: boolean; error
         return { success: false, error: 'Unauthorized' };
     }
 
-    const supabase = await createClient();
+    const supabase = await createUserClient();
     const { error } = await supabase
         .from('badges')
         .update({ is_active: true })
@@ -368,7 +371,7 @@ export async function disableBadge(id: string): Promise<{ success: boolean; erro
         return { success: false, error: 'Unauthorized' };
     }
 
-    const supabase = await createClient();
+    const supabase = await createUserClient();
     const { error } = await supabase
         .from('badges')
         .update({ is_active: false })
