@@ -15,16 +15,16 @@ export function Card({
 }: CardProps) {
     const paddingStyles = {
         none: '',
-        sm: 'p-3',
-        md: 'p-4',
+        sm: 'p-4',
+        md: 'p-5',
         lg: 'p-6',
     };
 
     return (
         <div
             className={`
-        bg-white rounded-xl shadow-sm border border-gray-100
-        ${hover ? 'card-hover cursor-pointer' : ''}
+        bg-white rounded-xl shadow-card border border-border
+        ${hover ? 'hover:shadow-card-hover hover:border-primary-200 transition-all duration-200 cursor-pointer' : ''}
         ${paddingStyles[padding]}
         ${className}
       `}
@@ -41,7 +41,7 @@ interface CardHeaderProps {
 
 export function CardHeader({ children, className = '' }: CardHeaderProps) {
     return (
-        <div className={`border-b border-gray-100 pb-4 mb-4 ${className}`}>
+        <div className={`border-b border-border pb-4 mb-4 ${className}`}>
             {children}
         </div>
     );
@@ -54,7 +54,7 @@ interface CardTitleProps {
 
 export function CardTitle({ children, className = '' }: CardTitleProps) {
     return (
-        <h3 className={`text-lg font-semibold text-gray-900 ${className}`}>
+        <h3 className={`text-lg font-semibold text-dark ${className}`}>
             {children}
         </h3>
     );
@@ -76,7 +76,7 @@ interface CardFooterProps {
 
 export function CardFooter({ children, className = '' }: CardFooterProps) {
     return (
-        <div className={`border-t border-gray-100 pt-4 mt-4 ${className}`}>
+        <div className={`border-t border-border pt-4 mt-4 ${className}`}>
             {children}
         </div>
     );

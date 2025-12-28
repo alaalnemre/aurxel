@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getUser, getProfile } from '@/lib/supabase/server';
 import { Header } from '@/components/layout/Header';
+import { ToastProvider } from '@/components/ui/Toast';
 
 export const runtime = 'nodejs';
 
@@ -21,11 +22,13 @@ export default async function ProtectedLayout({
     const profile = await getProfile();
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            <Header locale={locale} profile={profile} />
-            <main className="container mx-auto px-4 py-8">
-                {children}
-            </main>
-        </div>
+        <ToastProvider>
+            <div className="min-h-screen bg-gray-50">
+                <Header locale={locale} profile={profile} />
+                <main className="container mx-auto px-4 py-8">
+                    {children}
+                </main>
+            </div>
+        </ToastProvider>
     );
 }

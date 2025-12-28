@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/Card';
@@ -23,18 +25,18 @@ export function ProductCard({ product, locale, onAddToCart, isAddingToCart }: Pr
     const hasDiscount = product.compare_at_price && product.compare_at_price > product.price_jod;
 
     return (
-        <Card hover padding="none" className="overflow-hidden">
+        <Card hover padding="none" className="overflow-hidden group">
             {/* Image */}
-            <div className="relative aspect-square bg-gray-100">
+            <div className="relative aspect-square bg-gray-100 overflow-hidden">
                 {product.images && product.images.length > 0 ? (
                     <img
                         src={product.images[0]}
                         alt={product.title}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                 ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                        <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="w-full h-full flex items-center justify-center text-gray-300">
+                        <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                     </div>
@@ -42,8 +44,8 @@ export function ProductCard({ product, locale, onAddToCart, isAddingToCart }: Pr
 
                 {/* Out of Stock Badge */}
                 {isOutOfStock && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                        <span className="bg-white px-3 py-1 rounded-full text-sm font-medium text-gray-900">
+                    <div className="absolute inset-0 bg-dark/60 flex items-center justify-center backdrop-blur-sm">
+                        <span className="bg-white px-4 py-2 rounded-full text-sm font-semibold text-dark shadow-lg">
                             {t('store.outOfStock')}
                         </span>
                     </div>
@@ -51,7 +53,7 @@ export function ProductCard({ product, locale, onAddToCart, isAddingToCart }: Pr
 
                 {/* Discount Badge */}
                 {hasDiscount && !isOutOfStock && (
-                    <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-xs font-medium">
+                    <div className="absolute top-3 start-3 bg-error text-white px-2.5 py-1 rounded-lg text-xs font-bold shadow-lg">
                         {Math.round((1 - product.price_jod / (product.compare_at_price || product.price_jod)) * 100)}% OFF
                     </div>
                 )}
@@ -60,25 +62,28 @@ export function ProductCard({ product, locale, onAddToCart, isAddingToCart }: Pr
             {/* Content */}
             <div className="p-4">
                 <Link href={`/${locale}/product/${product.id}`}>
-                    <h3 className="font-medium text-gray-900 hover:text-primary-600 line-clamp-2 mb-1">
+                    <h3 className="font-semibold text-dark hover:text-primary line-clamp-2 mb-1 transition-colors">
                         {product.title}
                     </h3>
                 </Link>
 
                 {product.sellers && (
-                    <p className="text-sm text-gray-500 mb-2">
+                    <p className="text-sm text-gray-500 mb-3 flex items-center gap-1">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
                         {product.sellers.store_name}
                     </p>
                 )}
 
                 {/* Price */}
-                <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg font-bold text-gray-900">
+                <div className="flex items-baseline gap-2 mb-4">
+                    <span className="text-xl font-bold text-primary">
                         {product.price_jod.toFixed(2)} {t('common.currency')}
                     </span>
                     {hasDiscount && (
                         <span className="text-sm text-gray-400 line-through">
-                            {product.compare_at_price?.toFixed(2)} {t('common.currency')}
+                            {product.compare_at_price?.toFixed(2)}
                         </span>
                     )}
                 </div>
@@ -86,7 +91,7 @@ export function ProductCard({ product, locale, onAddToCart, isAddingToCart }: Pr
                 {/* Actions */}
                 {onAddToCart && (
                     <Button
-                        variant={isOutOfStock ? 'outline' : 'primary'}
+                        variant={isOutOfStock ? 'secondary' : 'primary'}
                         size="sm"
                         className="w-full"
                         disabled={isOutOfStock || isAddingToCart}
