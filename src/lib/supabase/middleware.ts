@@ -1,7 +1,4 @@
-// src/lib/supabase/middleware.ts
-// Supabase middleware utilities for session refresh
-
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function updateSession(request: NextRequest) {
@@ -17,7 +14,7 @@ export async function updateSession(request: NextRequest) {
                 getAll() {
                     return request.cookies.getAll();
                 },
-                setAll(cookiesToSet) {
+                setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
                     cookiesToSet.forEach(({ name, value }) =>
                         request.cookies.set(name, value)
                     );
@@ -32,11 +29,7 @@ export async function updateSession(request: NextRequest) {
         }
     );
 
-    // IMPORTANT: Do not add logic between createServerClient and
-    // supabase.auth.getUser(). Simple mistakes could make it very hard to debug
-    // unexpected behaviors.
-
-    // Refreshing the auth token
+    // Refresh session - do not redirect based on auth here
     await supabase.auth.getUser();
 
     return supabaseResponse;

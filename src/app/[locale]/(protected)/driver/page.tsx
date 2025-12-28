@@ -1,96 +1,52 @@
-// src/app/[locale]/(protected)/driver/page.tsx
-// Driver status page - shows driver profile status
-
-import { setRequestLocale } from 'next-intl/server';
 import { redirect } from 'next/navigation';
-import { createClient, getUser } from '@/lib/supabase/server';
+import { getTranslations } from 'next-intl/server';
+import { createClient, getProfile } from '@/lib/supabase/server';
+import Link from 'next/link';
+import { PageHeader, StatCard, EmptyState } from '@/components/ui/StatusBadge';
+import { Button } from '@/components/ui/Button';
 
-type Props = {
-    params: Promise<{ locale: string }>;
-};
+export const runtime = 'nodejs';
 
-export default async function DriverPage({ params }: Props) {
+export default async function DriverDashboardPage({ params }: { params: Promise<{ locale: string }> }) {
     const { locale } = await params;
-    setRequestLocale(locale);
+    const t = await getTranslations();
+    const profile = await getProfile();
 
-    // Auth guard
-    const user = await getUser();
-    if (!user) {
-        redirect(`/${locale}/login`);
+    if (!profile?.driver_verified) {
+        redirect(`/${locale}/become-driver`);
     }
 
     const supabase = await createClient();
+    const { data: driver } = await supabase.from('drivers').select('id').eq('profile_id', profile.id).maybeSingle();
+    if (!driver) redirect(`/${locale}/become-driver`);
 
-    // Fetch driver profile
-    const { data: driverProfile } = await supabase
-        .from('driver_profiles')
-        .select('vehicle_type, license_number, status, created_at')
-        .eq('user_id', user.id)
-        .maybeSingle();
+    const { data: deliveries } = await supabase.from('deliveries').select('id, status').eq('driver_id', driver.id);
+    const { data: availableDeliveries } = await supabase.from('deliveries').select('id').eq('status', 'available');
 
-    if (!driverProfile) {
-        return (
-            <div className="p-6">
-                <h1 className="text-2xl font-bold">Driver Dashboard</h1>
-                <p className="mt-4 text-gray-600">
-                    You have not applied to become a driver yet.
-                </p>
-            </div>
-        );
-    }
+    const totalDeliveries = deliveries?.filter(d => d.status === 'delivered').length || 0;
+    const activeDeliveries = deliveries?.filter(d => ['assigned', 'picked_up'].includes(d.status)).length || 0;
+    const available = availableDeliveries?.length || 0;
 
     return (
-        <div className="space-y-6 p-6">
-            <h1 className="text-2xl font-bold">Driver Dashboard</h1>
+        <div>
+            <PageHeader title={t('driver.welcome')} action={<Link href={`/${locale}/driver/deliveries`}><Button>{t('driver.availableDeliveries')}</Button></Link>} />
 
-            <div className="rounded-lg border p-4">
-                <h2 className="mb-2 font-semibold">Driver Profile</h2>
-                {driverProfile.vehicle_type && (
-                    <p><strong>Vehicle Type:</strong> {driverProfile.vehicle_type}</p>
-                )}
-                {driverProfile.license_number && (
-                    <p><strong>License:</strong> {driverProfile.license_number}</p>
-                )}
-                <p>
-                    <strong>Status:</strong>{' '}
-                    <StatusBadge status={driverProfile.status} />
-                </p>
-                <p className="mt-2 text-sm text-gray-500">
-                    Applied: {new Date(driverProfile.created_at).toLocaleDateString()}
-                </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <StatCard title={t('driver.totalDeliveries')} value={totalDeliveries} />
+                <StatCard title={t('driver.availableDeliveries')} value={available} />
+                <StatCard title="Active" value={activeDeliveries} />
             </div>
 
-            {driverProfile.status === 'pending' && (
-                <div className="rounded-lg bg-yellow-50 p-4 text-yellow-800">
-                    Your driver application is pending review. We will notify you once approved.
-                </div>
-            )}
-
-            {driverProfile.status === 'rejected' && (
-                <div className="rounded-lg bg-red-50 p-4 text-red-800">
-                    Your driver application was rejected. Please contact support for more information.
-                </div>
-            )}
-
-            {driverProfile.status === 'approved' && (
-                <div className="rounded-lg bg-green-50 p-4 text-green-800">
-                    Your driver account is active! You can start accepting deliveries.
-                </div>
-            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Link href={`/${locale}/driver/deliveries?tab=available`} className="bg-white rounded-xl p-6 border hover:border-primary-300">
+                    <h3 className="font-semibold text-lg mb-2">{t('driver.availableDeliveries')}</h3>
+                    <p className="text-gray-500">{available} available</p>
+                </Link>
+                <Link href={`/${locale}/driver/deliveries?tab=my`} className="bg-white rounded-xl p-6 border hover:border-primary-300">
+                    <h3 className="font-semibold text-lg mb-2">{t('driver.myDeliveries')}</h3>
+                    <p className="text-gray-500">{activeDeliveries} active</p>
+                </Link>
+            </div>
         </div>
-    );
-}
-
-function StatusBadge({ status }: { status: string }) {
-    const colors: Record<string, string> = {
-        pending: 'bg-yellow-100 text-yellow-800',
-        approved: 'bg-green-100 text-green-800',
-        rejected: 'bg-red-100 text-red-800',
-    };
-
-    return (
-        <span className={`inline-block rounded px-2 py-1 text-sm ${colors[status] || colors.pending}`}>
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-        </span>
     );
 }

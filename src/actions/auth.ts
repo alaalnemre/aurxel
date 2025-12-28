@@ -1,210 +1,185 @@
-// src/actions/auth.ts
-// Server actions for authentication (registerUser, loginUser)
-
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
+import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 
-// ============================================
-// VALIDATION SCHEMAS
-// ============================================
-
+// Validation Schemas
 const registerSchema = z.object({
-    email: z.string().min(1, 'Email is required').email('Invalid email'),
-    password: z.string().min(8, 'Password must be at least 8 characters'),
+    email: z.string().email('Invalid email address'),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+    fullName: z.string().min(2, 'Name must be at least 2 characters'),
 });
 
 const loginSchema = z.object({
-    email: z.string().min(1, 'Email is required').email('Invalid email'),
+    email: z.string().email('Invalid email address'),
     password: z.string().min(1, 'Password is required'),
 });
 
-// ============================================
-// RESULT TYPES
-// ============================================
+const resetPasswordSchema = z.object({
+    email: z.string().email('Invalid email address'),
+});
 
-export type RegisterResult = {
+const updatePasswordSchema = z.object({
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+// Types
+export type ActionResult<T = void> = {
     success: boolean;
-    userId?: string;
+    data?: T;
     error?: string;
 };
 
-export type LoginResult = {
-    success: boolean;
-    redirectTo?: string;
-    error?: string;
-};
+// Register User
+export async function registerUser(formData: FormData): Promise<ActionResult> {
+    const supabase = await createClient();
 
-// ============================================
-// registerUser
-// ============================================
-// Creates a new user with Supabase Auth.
-// Profile row is auto-created by database trigger.
-// Default: is_buyer=true, is_seller=false, is_driver=false, is_admin=false
+    const rawData = {
+        email: formData.get('email') as string,
+        password: formData.get('password') as string,
+        fullName: formData.get('fullName') as string,
+    };
 
-export async function registerUser(
-    email: string,
-    password: string
-): Promise<RegisterResult> {
-    // Validate input
-    const parsed = registerSchema.safeParse({ email, password });
-    if (!parsed.success) {
-        return {
-            success: false,
-            error: parsed.error.issues[0]?.message || 'Invalid input',
-        };
+    const validation = registerSchema.safeParse(rawData);
+    if (!validation.success) {
+        return { success: false, error: validation.error.errors[0].message };
     }
 
-    try {
-        const supabase = await createClient();
+    const { email, password, fullName } = validation.data;
 
-        // Sign up with Supabase Auth
-        const { data, error } = await supabase.auth.signUp({
-            email: parsed.data.email,
-            password: parsed.data.password,
-        });
+    const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+            data: {
+                full_name: fullName,
+            },
+        },
+    });
 
-        if (error) {
-            console.error('[registerUser] Auth error:', error.message);
-            return {
-                success: false,
-                error: mapAuthError(error.message),
-            };
-        }
-
-        if (!data.user) {
-            return {
-                success: false,
-                error: 'Failed to create user account',
-            };
-        }
-
-        // Check for existing user (email already registered)
-        if (data.user.identities?.length === 0) {
-            return {
-                success: false,
-                error: 'An account with this email already exists',
-            };
-        }
-
-        // Profile row is auto-created by database trigger (handle_new_user)
-        // with default flags: is_buyer=true, others=false
-
-        return {
-            success: true,
-            userId: data.user.id,
-        };
-    } catch (err) {
-        console.error('[registerUser] Unexpected error:', err);
-        return {
-            success: false,
-            error: 'An unexpected error occurred. Please try again.',
-        };
+    if (error) {
+        console.error('[registerUser] Error:', error);
+        return { success: false, error: error.message };
     }
+
+    return { success: true };
 }
 
-// ============================================
-// loginUser
-// ============================================
-// Signs in user and returns redirect destination based on capabilities.
-// Priority: admin > seller > driver > buyer
+// Login User
+export async function loginUser(formData: FormData): Promise<ActionResult<{ redirectTo: string }>> {
+    const supabase = await createClient();
 
-export async function loginUser(
-    email: string,
-    password: string
-): Promise<LoginResult> {
-    // Validate input
-    const parsed = loginSchema.safeParse({ email, password });
-    if (!parsed.success) {
-        return {
-            success: false,
-            error: parsed.error.issues[0]?.message || 'Invalid input',
-        };
+    const rawData = {
+        email: formData.get('email') as string,
+        password: formData.get('password') as string,
+    };
+
+    const locale = (formData.get('locale') as string) || 'en';
+
+    const validation = loginSchema.safeParse(rawData);
+    if (!validation.success) {
+        return { success: false, error: validation.error.errors[0].message };
     }
 
-    try {
-        const supabase = await createClient();
+    const { email, password } = validation.data;
 
-        // Sign in with Supabase Auth
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email: parsed.data.email,
-            password: parsed.data.password,
-        });
+    const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+    });
 
-        if (error) {
-            console.error('[loginUser] Auth error:', error.message);
-            return {
-                success: false,
-                error: mapAuthError(error.message),
-            };
-        }
-
-        if (!data.user) {
-            return {
-                success: false,
-                error: 'Failed to sign in',
-            };
-        }
-
-        // Fetch user profile to determine redirect
-        const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('is_admin, is_seller, is_driver, is_buyer')
-            .eq('id', data.user.id)
-            .maybeSingle();
-
-        if (profileError) {
-            console.error('[loginUser] Profile fetch error:', profileError.message);
-            // Still logged in, default to buyer
-            return {
-                success: true,
-                redirectTo: '/buyer',
-            };
-        }
-
-        // Determine redirect based on capabilities (priority order)
-        let redirectTo = '/buyer';
-        if (profile) {
-            if (profile.is_admin) {
-                redirectTo = '/admin';
-            } else if (profile.is_seller) {
-                redirectTo = '/seller';
-            } else if (profile.is_driver) {
-                redirectTo = '/driver';
-            }
-        }
-
-        return {
-            success: true,
-            redirectTo,
-        };
-    } catch (err) {
-        console.error('[loginUser] Unexpected error:', err);
-        return {
-            success: false,
-            error: 'An unexpected error occurred. Please try again.',
-        };
+    if (error) {
+        console.error('[loginUser] Error:', error);
+        return { success: false, error: error.message };
     }
+
+    if (!data.user) {
+        return { success: false, error: 'Login failed' };
+    }
+
+    // Get profile to determine redirect
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_admin, seller_verified, driver_verified')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+    let redirectTo = `/${locale}/store`;
+
+    if (profile?.is_admin) {
+        redirectTo = `/${locale}/admin`;
+    }
+
+    return { success: true, data: { redirectTo } };
 }
 
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
+// Logout User
+export async function logoutUser(): Promise<ActionResult> {
+    const supabase = await createClient();
 
-function mapAuthError(message: string): string {
-    // Map Supabase auth errors to user-friendly messages
-    if (message.includes('Invalid login credentials')) {
-        return 'Invalid email or password';
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+        console.error('[logoutUser] Error:', error);
+        return { success: false, error: error.message };
     }
-    if (message.includes('Email not confirmed')) {
-        return 'Please verify your email before signing in';
+
+    return { success: true };
+}
+
+// Request Password Reset
+export async function requestPasswordReset(formData: FormData): Promise<ActionResult> {
+    const supabase = await createClient();
+
+    const rawData = {
+        email: formData.get('email') as string,
+    };
+
+    const locale = (formData.get('locale') as string) || 'en';
+
+    const validation = resetPasswordSchema.safeParse(rawData);
+    if (!validation.success) {
+        return { success: false, error: validation.error.errors[0].message };
     }
-    if (message.includes('User already registered')) {
-        return 'An account with this email already exists';
+
+    const { email } = validation.data;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/${locale}/reset-password/update`,
+    });
+
+    if (error) {
+        console.error('[requestPasswordReset] Error:', error);
+        return { success: false, error: error.message };
     }
-    if (message.includes('Password should be')) {
-        return 'Password must be at least 8 characters';
+
+    return { success: true };
+}
+
+// Update Password
+export async function updatePassword(formData: FormData): Promise<ActionResult> {
+    const supabase = await createClient();
+
+    const rawData = {
+        password: formData.get('password') as string,
+    };
+
+    const validation = updatePasswordSchema.safeParse(rawData);
+    if (!validation.success) {
+        return { success: false, error: validation.error.errors[0].message };
     }
-    return message;
+
+    const { password } = validation.data;
+
+    const { error } = await supabase.auth.updateUser({
+        password,
+    });
+
+    if (error) {
+        console.error('[updatePassword] Error:', error);
+        return { success: false, error: error.message };
+    }
+
+    return { success: true };
 }

@@ -1,94 +1,56 @@
-// src/app/[locale]/(protected)/seller/page.tsx
-// Seller status page - shows seller profile status
-
-import { setRequestLocale } from 'next-intl/server';
 import { redirect } from 'next/navigation';
-import { createClient, getUser } from '@/lib/supabase/server';
+import { getTranslations } from 'next-intl/server';
+import { createClient, getProfile } from '@/lib/supabase/server';
+import { PageHeader, StatCard, EmptyState } from '@/components/ui/StatusBadge';
+import Link from 'next/link';
+import { Button } from '@/components/ui/Button';
 
-type Props = {
-    params: Promise<{ locale: string }>;
-};
+export const runtime = 'nodejs';
 
-export default async function SellerPage({ params }: Props) {
+export default async function SellerDashboardPage({ params }: { params: Promise<{ locale: string }> }) {
     const { locale } = await params;
-    setRequestLocale(locale);
+    const t = await getTranslations();
+    const profile = await getProfile();
 
-    // Auth guard
-    const user = await getUser();
-    if (!user) {
-        redirect(`/${locale}/login`);
+    if (!profile?.seller_verified) {
+        redirect(`/${locale}/become-seller`);
     }
 
     const supabase = await createClient();
 
-    // Fetch seller profile
-    const { data: sellerProfile } = await supabase
-        .from('seller_profiles')
-        .select('store_name, store_description, status, created_at')
-        .eq('user_id', user.id)
-        .maybeSingle();
+    const { data: seller } = await supabase.from('sellers').select('id, store_name').eq('profile_id', profile.id).maybeSingle();
+    if (!seller) redirect(`/${locale}/become-seller`);
 
-    if (!sellerProfile) {
-        return (
-            <div className="p-6">
-                <h1 className="text-2xl font-bold">Seller Dashboard</h1>
-                <p className="mt-4 text-gray-600">
-                    You have not applied to become a seller yet.
-                </p>
-            </div>
-        );
-    }
+    const { count: productCount } = await supabase.from('products').select('*', { count: 'exact', head: true }).eq('seller_id', seller.id);
+    const { data: orders } = await supabase.from('orders').select('id, total, status').eq('seller_id', seller.id);
+
+    const totalOrders = orders?.length || 0;
+    const totalSales = orders?.reduce((sum, o) => sum + (o.status === 'completed' ? Number(o.total) : 0), 0) || 0;
+    const pendingOrders = orders?.filter(o => ['placed', 'accepted', 'preparing'].includes(o.status)).length || 0;
 
     return (
-        <div className="space-y-6 p-6">
-            <h1 className="text-2xl font-bold">Seller Dashboard</h1>
+        <div>
+            <PageHeader
+                title={`${t('seller.welcome')}, ${seller.store_name}`}
+                action={<Link href={`/${locale}/seller/products/new`}><Button>{t('seller.addProduct')}</Button></Link>}
+            />
 
-            <div className="rounded-lg border p-4">
-                <h2 className="mb-2 font-semibold">Seller Profile</h2>
-                <p><strong>Store Name:</strong> {sellerProfile.store_name}</p>
-                {sellerProfile.store_description && (
-                    <p><strong>Description:</strong> {sellerProfile.store_description}</p>
-                )}
-                <p>
-                    <strong>Status:</strong>{' '}
-                    <StatusBadge status={sellerProfile.status} />
-                </p>
-                <p className="mt-2 text-sm text-gray-500">
-                    Applied: {new Date(sellerProfile.created_at).toLocaleDateString()}
-                </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <StatCard title={t('seller.totalSales')} value={`${totalSales.toFixed(2)} ${t('common.currency')}`} />
+                <StatCard title={t('seller.totalOrders')} value={totalOrders} />
+                <StatCard title={t('seller.pendingOrders')} value={pendingOrders} />
             </div>
 
-            {sellerProfile.status === 'pending' && (
-                <div className="rounded-lg bg-yellow-50 p-4 text-yellow-800">
-                    Your seller application is pending review. We will notify you once approved.
-                </div>
-            )}
-
-            {sellerProfile.status === 'rejected' && (
-                <div className="rounded-lg bg-red-50 p-4 text-red-800">
-                    Your seller application was rejected. Please contact support for more information.
-                </div>
-            )}
-
-            {sellerProfile.status === 'approved' && (
-                <div className="rounded-lg bg-green-50 p-4 text-green-800">
-                    Your seller account is active! You can start adding products.
-                </div>
-            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Link href={`/${locale}/seller/products`} className="bg-white rounded-xl p-6 border hover:border-primary-300 transition-colors">
+                    <h3 className="font-semibold text-lg mb-2">{t('seller.products')}</h3>
+                    <p className="text-gray-500">{productCount || 0} products</p>
+                </Link>
+                <Link href={`/${locale}/seller/orders`} className="bg-white rounded-xl p-6 border hover:border-primary-300 transition-colors">
+                    <h3 className="font-semibold text-lg mb-2">{t('seller.orders')}</h3>
+                    <p className="text-gray-500">{pendingOrders} pending</p>
+                </Link>
+            </div>
         </div>
-    );
-}
-
-function StatusBadge({ status }: { status: string }) {
-    const colors: Record<string, string> = {
-        pending: 'bg-yellow-100 text-yellow-800',
-        approved: 'bg-green-100 text-green-800',
-        rejected: 'bg-red-100 text-red-800',
-    };
-
-    return (
-        <span className={`inline-block rounded px-2 py-1 text-sm ${colors[status] || colors.pending}`}>
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-        </span>
     );
 }
