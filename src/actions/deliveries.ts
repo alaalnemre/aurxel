@@ -3,15 +3,18 @@
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import type { ActionResult } from './auth';
+// ... (imports)
+import { createNotification } from './notifications';
+import { evaluateDriverBadges, evaluateBuyerBadges, evaluateSellerBadges } from './badges';
 
-// Validation Schemas
 const acceptDeliverySchema = z.object({
-    deliveryId: z.string().uuid('Invalid delivery ID'),
+    deliveryId: z.string().uuid(),
 });
 
 const updateDeliverySchema = z.object({
-    deliveryId: z.string().uuid('Invalid delivery ID'),
+    deliveryId: z.string().uuid(),
 });
+
 
 // Driver Accept Delivery
 export async function driverAcceptDelivery(formData: FormData): Promise<ActionResult> {
@@ -48,7 +51,7 @@ export async function driverAcceptDelivery(formData: FormData): Promise<ActionRe
     // Get delivery
     const { data: delivery } = await supabase
         .from('deliveries')
-        .select('id, status, order_id')
+        .select('id, status, order_id, orders(buyer_profile_id)')
         .eq('id', deliveryId)
         .maybeSingle();
 
@@ -85,6 +88,19 @@ export async function driverAcceptDelivery(formData: FormData): Promise<ActionRe
 
     if (orderError) {
         console.error('[driverAcceptDelivery] Error updating order:', orderError);
+    }
+
+    // Notify Buyer
+    const orderInfo = delivery.orders as unknown as { buyer_profile_id: string } | null;
+    if (orderInfo?.buyer_profile_id) {
+        await createNotification(
+            orderInfo.buyer_profile_id,
+            'order_status',
+            'notifications.orderStatus.title',
+            'notifications.orderStatus.assigned',
+            { orderId: delivery.order_id },
+            `order_status:${delivery.order_id}:assigned`
+        );
     }
 
     return { success: true };
@@ -124,7 +140,7 @@ export async function driverMarkPickedUp(formData: FormData): Promise<ActionResu
     // Get delivery
     const { data: delivery } = await supabase
         .from('deliveries')
-        .select('id, status, order_id, driver_id')
+        .select('id, status, order_id, driver_id, orders(buyer_profile_id)')
         .eq('id', deliveryId)
         .maybeSingle();
 
@@ -162,6 +178,19 @@ export async function driverMarkPickedUp(formData: FormData): Promise<ActionResu
         console.error('[driverMarkPickedUp] Error updating order:', orderError);
     }
 
+    // Notify Buyer
+    const orderInfo = delivery.orders as unknown as { buyer_profile_id: string } | null;
+    if (orderInfo?.buyer_profile_id) {
+        await createNotification(
+            orderInfo.buyer_profile_id,
+            'order_status',
+            'notifications.orderStatus.title',
+            'notifications.orderStatus.picked_up',
+            { orderId: delivery.order_id },
+            `order_status:${delivery.order_id}:picked_up`
+        );
+    }
+
     return { success: true };
 }
 
@@ -196,10 +225,18 @@ export async function driverMarkDelivered(formData: FormData): Promise<ActionRes
         return { success: false, error: 'Not a driver' };
     }
 
-    // Get delivery
+    // Get delivery and related order details
+    // We need seller profile ID too, so we need to join sellers
     const { data: delivery } = await supabase
         .from('deliveries')
-        .select('id, status, order_id, driver_id')
+        .select(`
+            id, status, order_id, driver_id, driver_profile_id, 
+            orders(
+                buyer_profile_id, 
+                seller_id,
+                sellers(profile_id)
+            )
+        `)
         .eq('id', deliveryId)
         .maybeSingle();
 
@@ -237,6 +274,58 @@ export async function driverMarkDelivered(formData: FormData): Promise<ActionRes
 
     if (orderError) {
         console.error('[driverMarkDelivered] Error updating order:', orderError);
+    }
+
+    // Handle notifications and badges
+    try {
+        const orderInfo = delivery.orders as any;
+        const buyerId = orderInfo?.buyer_profile_id;
+        const sellerId = orderInfo?.seller_id;
+        const sellerProfileId = orderInfo?.sellers?.profile_id;
+
+        // Notify Buyer: Delivered
+        if (buyerId) {
+            await createNotification(
+                buyerId,
+                'order_status',
+                'notifications.orderStatus.title',
+                'notifications.orderStatus.delivered',
+                { orderId: delivery.order_id },
+                `order_status:${delivery.order_id}:delivered`
+            );
+        }
+
+        // Notify Seller: Delivered
+        if (sellerProfileId) {
+            await createNotification(
+                sellerProfileId,
+                'order_status',
+                'notifications.orderStatus.title',
+                'notifications.orderStatus.delivered',
+                { orderId: delivery.order_id },
+                `order_status:${delivery.order_id}:delivered_seller`
+            );
+        }
+
+        // Trigger Badge Evaluations
+
+        // 1. Driver badges
+        if (delivery.driver_profile_id) {
+            await evaluateDriverBadges(delivery.driver_profile_id);
+        }
+
+        // 2. Buyer badges
+        if (buyerId) {
+            await evaluateBuyerBadges(buyerId);
+        }
+
+        // 3. Seller badges
+        if (sellerId) {
+            await evaluateSellerBadges(sellerId);
+        }
+    } catch (error) {
+        console.error('[driverMarkDelivered] Error in post-delivery tasks:', error);
+        // Don't fail main action
     }
 
     return { success: true };

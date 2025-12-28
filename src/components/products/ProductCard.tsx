@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import type { Database } from '@/lib/database.types';
+import type { ProfileBadgeWithDetails } from '@/actions/badges';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -17,9 +18,10 @@ interface ProductCardProps {
     locale: string;
     onAddToCart?: (productId: string) => void;
     isAddingToCart?: boolean;
+    sellerBadges?: ProfileBadgeWithDetails[];
 }
 
-export function ProductCard({ product, locale, onAddToCart, isAddingToCart }: ProductCardProps) {
+export function ProductCard({ product, locale, onAddToCart, isAddingToCart, sellerBadges }: ProductCardProps) {
     const t = useTranslations();
     const isOutOfStock = product.stock <= 0;
     const hasDiscount = product.compare_at_price && product.compare_at_price > product.price_jod;
@@ -68,12 +70,33 @@ export function ProductCard({ product, locale, onAddToCart, isAddingToCart }: Pr
                 </Link>
 
                 {product.sellers && (
-                    <p className="text-sm text-gray-500 mb-3 flex items-center gap-1">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                        </svg>
-                        {product.sellers.store_name}
-                    </p>
+                    <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm text-gray-500 flex items-center gap-1">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                            {product.sellers.store_name}
+                        </p>
+
+                        {sellerBadges && sellerBadges.length > 0 && (
+                            <div className="flex gap-1">
+                                {sellerBadges.slice(0, 3).map(badge => (
+                                    <div
+                                        key={badge.id}
+                                        className="group relative cursor-help"
+                                        title={locale === 'ar' ? badge.titleAr : badge.titleEn}
+                                    >
+                                        <span className="text-sm">{badge.icon}</span>
+
+                                        {/* Tooltip */}
+                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-32 p-1.5 bg-dark text-white text-[9px] rounded shadow-xl z-50 text-center pointer-events-none">
+                                            {locale === 'ar' ? badge.titleAr : badge.titleEn}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 )}
 
                 {/* Price */}

@@ -109,6 +109,10 @@ export async function loginUser(formData: FormData): Promise<ActionResult<{ redi
 
     if (profile?.is_admin) {
         redirectTo = `/${locale}/admin`;
+    } else if (profile?.seller_verified) {
+        redirectTo = `/${locale}/seller`;
+    } else if (profile?.driver_verified) {
+        redirectTo = `/${locale}/driver`;
     }
 
     return { success: true, data: { redirectTo } };

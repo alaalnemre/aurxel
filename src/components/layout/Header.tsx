@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import type { Database } from '@/lib/database.types';
 import { logoutUser } from '@/actions/auth';
+import NotificationBell from '../notifications/NotificationBell';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -96,6 +97,9 @@ export function Header({ locale, profile }: HeaderProps) {
                         >
                             {otherLocale === 'ar' ? 'العربية' : 'English'}
                         </Link>
+
+                        {/* Notifications */}
+                        {profile && <NotificationBell />}
 
                         {/* Profile Dropdown */}
                         <div className="relative">
