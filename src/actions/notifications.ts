@@ -1,163 +1,115 @@
-'use server';
+"use server";
 
-import { createAdminClient, createClient } from '@/lib/supabase/server';
-import { Database } from '@/lib/database.types';
+import { createUserClient, getUser } from "@/lib/supabase/server";
+import type { Notification } from "@/types/database";
 
-type NotificationType = Database['public']['Enums']['notification_type'];
-
-/**
- * Creates a notification safely.
- * This function handles its own errors and will not throw, so it can be safely
- * called from within critical flows (like order placement) without risk of rollback.
- */
-export async function createNotification(
-    profileId: string,
-    type: NotificationType,
-    titleKey: string,
-    messageKey: string,
-    metadata?: Record<string, any> | null,
-    dedupeKey?: string
-) {
-    try {
-        // Use Admin Client to bypass RLS for creating notifications for other users
-        const supabase = await createAdminClient();
-
-        // If dedupeKey is provided, check if we recently created a similar notification
-        if (dedupeKey) {
-            // First check if one exists with this dedupe key
-            // Note: We rely on the unique index or a manual check. 
-            // Since unique index is on dedupe_key (global), it might conflict if we don't scope it or if we don't want strict uniqueness forever.
-            // The migration said unique index on dedupe_key where dedupe_key is not null. 
-            // So if we insert duplicate dedupe_key detailed in the request (e.g. order_status:123:delivered), it will fail due to constraint.
-            // We should catch that specific error or just try insert/ignore if possible, or check existence.
-            // Supabase/Postgres doesn't have easy "ON CONFLICT IGNORE" via JS client for standard inserts unless upsert,
-            // but upsert updates the record which changes 'is_read' potentially. 
-            // We want to skip if exists.
-
-            // Simple approach: Check existence first. Race condition effectively mitigated by unique constraint (second insert will fail).
-            // We treat unique constraint violation as "success - already notified".
-        }
-
-        const { error } = await supabase.from('notifications').insert({
-            profile_id: profileId,
-            type,
-            title_key: titleKey,
-            message_key: messageKey,
-            metadata,
-            dedupe_key: dedupeKey,
-        });
-
-        if (error) {
-            // If unique violation (code 23505), it means already notified. Ignore.
-            if (error.code === '23505') {
-                // console.log('Notification deduped:', dedupeKey);
-                return;
-            }
-            console.error('[createNotification] Failed to create notification:', error);
-        }
-    } catch (err) {
-        console.error('[createNotification] Unexpected error:', err);
-    }
+export interface ActionResult<T = void> {
+    success: boolean;
+    data?: T;
+    error?: string;
 }
 
-/**
- * Get notifications for the current user.
- */
-export async function getUserNotifications({
-    onlyUnread = false,
-    limit = 10,
-    page = 1,
-}: {
-    onlyUnread?: boolean;
-    limit?: number;
+export async function getNotifications(options?: {
     page?: number;
-} = {}) {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    limit?: number;
+    unreadOnly?: boolean;
+}): Promise<ActionResult<{ notifications: Notification[]; total: number; unreadCount: number }>> {
+    try {
+        const user = await getUser();
+        if (!user) return { success: false, error: "Not authenticated" };
 
-    if (!user) {
-        return { data: [], count: 0, unreadCount: 0 };
+        const supabase = await createUserClient();
+        const page = options?.page || 1;
+        const limit = options?.limit || 20;
+        const offset = (page - 1) * limit;
+
+        let query = supabase
+            .from("notifications")
+            .select("*", { count: "exact" })
+            .eq("profile_id", user.id);
+
+        if (options?.unreadOnly) {
+            query = query.eq("is_read", false);
+        }
+
+        const { data: notifications, error, count } = await query
+            .order("created_at", { ascending: false })
+            .range(offset, offset + limit - 1);
+
+        if (error) return { success: false, error: error.message };
+
+        const { count: unreadCount } = await supabase
+            .from("notifications")
+            .select("*", { count: "exact", head: true })
+            .eq("profile_id", user.id)
+            .eq("is_read", false);
+
+        return {
+            success: true,
+            data: {
+                notifications: notifications as Notification[],
+                total: count || 0,
+                unreadCount: unreadCount || 0,
+            },
+        };
+    } catch {
+        return { success: false, error: "Failed to get notifications" };
     }
-
-    // Build query
-    let query = supabase
-        .from('notifications')
-        .select('*', { count: 'exact' })
-        .eq('profile_id', user.id)
-        .order('created_at', { ascending: false });
-
-    if (onlyUnread) {
-        query = query.eq('is_read', false);
-    }
-
-    // Pagination
-    const from = (page - 1) * limit;
-    const to = from + limit - 1;
-    query = query.range(from, to);
-
-    const { data, count, error } = await query;
-
-    if (error) {
-        console.error('[getUserNotifications] Error:', error);
-        return { data: [], count: 0, unreadCount: 0 };
-    }
-
-    // Get separated unread count
-    const { count: unreadCount } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('profile_id', user.id)
-        .eq('is_read', false);
-
-    return {
-        data: data || [],
-        count: count || 0,
-        unreadCount: unreadCount || 0,
-    };
 }
 
-/**
- * Mark a single notification as read.
- */
-export async function markNotificationRead(notificationId: string) {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+export async function markAsRead(notificationId: string): Promise<ActionResult> {
+    try {
+        const user = await getUser();
+        if (!user) return { success: false, error: "Not authenticated" };
 
-    if (!user) return { success: false };
+        const supabase = await createUserClient();
+        const { error } = await supabase
+            .from("notifications")
+            .update({ is_read: true })
+            .eq("id", notificationId)
+            .eq("profile_id", user.id);
 
-    const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('id', notificationId)
-        .eq('profile_id', user.id);
-
-    if (error) {
-        console.error('[markNotificationRead] Error:', error);
-        return { success: false };
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+    } catch {
+        return { success: false, error: "Failed to mark as read" };
     }
-
-    return { success: true };
 }
 
-/**
- * Mark all notifications as read for the current user.
- */
-export async function markAllNotificationsRead() {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+export async function markAllAsRead(): Promise<ActionResult> {
+    try {
+        const user = await getUser();
+        if (!user) return { success: false, error: "Not authenticated" };
 
-    if (!user) return { success: false };
+        const supabase = await createUserClient();
+        const { error } = await supabase
+            .from("notifications")
+            .update({ is_read: true })
+            .eq("profile_id", user.id)
+            .eq("is_read", false);
 
-    const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('profile_id', user.id)
-        .eq('is_read', false);
-
-    if (error) {
-        console.error('[markAllNotificationsRead] Error:', error);
-        return { success: false };
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+    } catch {
+        return { success: false, error: "Failed to mark all as read" };
     }
+}
 
-    return { success: true };
+export async function getUnreadCount(): Promise<ActionResult<number>> {
+    try {
+        const user = await getUser();
+        if (!user) return { success: true, data: 0 };
+
+        const supabase = await createUserClient();
+        const { count, error } = await supabase
+            .from("notifications")
+            .select("*", { count: "exact", head: true })
+            .eq("profile_id", user.id)
+            .eq("is_read", false);
+
+        if (error) return { success: false, error: error.message };
+        return { success: true, data: count || 0 };
+    } catch {
+        return { success: true, data: 0 };
+    }
 }

@@ -1,83 +1,49 @@
-import React from 'react';
+import { ReactNode } from "react";
 
 interface CardProps {
-    children: React.ReactNode;
+    children: ReactNode;
     className?: string;
-    hover?: boolean;
-    padding?: 'none' | 'sm' | 'md' | 'lg';
+    padding?: "none" | "sm" | "md" | "lg";
 }
 
-export function Card({
-    children,
-    className = '',
-    hover = false,
-    padding = 'md',
-}: CardProps) {
-    const paddingStyles = {
-        none: '',
-        sm: 'p-4',
-        md: 'p-5',
-        lg: 'p-6',
+export function Card({ children, className = "", padding = "md" }: CardProps) {
+    const paddings = {
+        none: "",
+        sm: "p-4",
+        md: "p-6",
+        lg: "p-8",
     };
 
     return (
-        <div
-            className={`
-        bg-white rounded-xl shadow-card border border-border
-        ${hover ? 'hover:shadow-card-hover hover:border-primary-200 transition-all duration-200 cursor-pointer' : ''}
-        ${paddingStyles[padding]}
-        ${className}
-      `}
-        >
+        <div className={`bg-white rounded-xl border border-gray-200 shadow-sm ${paddings[padding]} ${className}`}>
             {children}
         </div>
     );
 }
 
 interface CardHeaderProps {
-    children: React.ReactNode;
+    children: ReactNode;
     className?: string;
 }
 
-export function CardHeader({ children, className = '' }: CardHeaderProps) {
-    return (
-        <div className={`border-b border-border pb-4 mb-4 ${className}`}>
-            {children}
-        </div>
-    );
+export function CardHeader({ children, className = "" }: CardHeaderProps) {
+    return <div className={`mb-4 ${className}`}>{children}</div>;
 }
 
 interface CardTitleProps {
-    children: React.ReactNode;
+    children: ReactNode;
     className?: string;
 }
 
-export function CardTitle({ children, className = '' }: CardTitleProps) {
-    return (
-        <h3 className={`text-lg font-semibold text-dark ${className}`}>
-            {children}
-        </h3>
-    );
+export function CardTitle({ children, className = "" }: CardTitleProps) {
+    return <h3 className={`text-lg font-semibold text-gray-900 ${className}`}>{children}</h3>;
 }
 
 interface CardContentProps {
-    children: React.ReactNode;
+    children: ReactNode;
     className?: string;
 }
 
-export function CardContent({ children, className = '' }: CardContentProps) {
+export function CardContent({ children, className = "" }: CardContentProps) {
     return <div className={className}>{children}</div>;
-}
-
-interface CardFooterProps {
-    children: React.ReactNode;
-    className?: string;
-}
-
-export function CardFooter({ children, className = '' }: CardFooterProps) {
-    return (
-        <div className={`border-t border-border pt-4 mt-4 ${className}`}>
-            {children}
-        </div>
-    );
 }

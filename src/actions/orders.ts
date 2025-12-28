@@ -1,420 +1,613 @@
-'use server';
+"use server";
 
-import { z } from 'zod';
-import { createClient } from '@/lib/supabase/server';
-import type { ActionResult } from './auth';
-// ... (imports)
-import { createNotification } from './notifications';
-import { applyDiscountToOrder } from './discounts';
+import { createUserClient, createAdminClient, getUser } from "@/lib/supabase/server";
+import type { Order, OrderItem, OrderStatus, Delivery } from "@/types/database";
 
-// Schemas
-const placeOrderSchema = z.object({
-    address: z.string().min(5, 'Address is too short'),
-    city: z.string().min(2, 'City is required'),
-    phone: z.string().min(10, 'Phone number is required'),
-    notes: z.string().optional(),
-    discountCodeId: z.string().uuid().optional(),
-    discountAmount: z.string().optional().transform(val => val ? parseFloat(val) : undefined),
-});
-
-const cancelOrderSchema = z.object({
-    orderId: z.string().uuid(),
-    reason: z.string().optional(),
-});
-
-// Cart Summary
-export async function getCartSummary(): Promise<ActionResult<{
-    items: any[];
-    subtotal: number;
-    deliveryFee: number;
-    total: number;
-    itemCount: number;
-}>> {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-        return { success: false, error: 'Unauthorized' };
-    }
-
-    const { data: cartItems, error } = await supabase
-        .from('cart_items')
-        .select('*, products(title, price_jod, stock)')
-        .eq('profile_id', user.id);
-
-    if (error) {
-        return { success: false, error: error.message };
-    }
-
-    const items = cartItems || [];
-    const subtotal = items.reduce((sum, item) => {
-        const product = item.products as any;
-        return sum + (product?.price_jod || 0) * item.quantity;
-    }, 0);
-
-    const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
-    const deliveryFee = 2.0;
-
-    return {
-        success: true,
-        data: {
-            items,
-            subtotal,
-            deliveryFee,
-            total: subtotal + deliveryFee,
-            itemCount
-        }
-    };
+export interface ActionResult<T = void> {
+    success: boolean;
+    data?: T;
+    error?: string;
 }
 
-// Place Order
-export async function buyerPlaceOrder(formData: FormData): Promise<ActionResult<{ orderId: string }>> {
-    const supabase = await createClient();
+export interface OrderWithItems extends Order {
+    items: OrderItem[];
+    delivery?: Delivery;
+    seller_name?: string;
+}
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-        return { success: false, error: 'Unauthorized' };
-    }
+// Valid state transitions
+const VALID_ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+    placed: ["accepted", "cancelled"],
+    accepted: ["preparing", "cancelled"],
+    preparing: ["ready_for_pickup", "cancelled"],
+    ready_for_pickup: ["completed", "cancelled"],
+    completed: [],
+    cancelled: [],
+};
 
-    const rawData = {
-        address: formData.get('address') as string,
-        city: formData.get('city') as string,
-        phone: formData.get('phone') as string,
-        notes: formData.get('notes') as string || undefined,
-        discountCodeId: formData.get('discountCodeId') as string || undefined,
-        discountAmount: formData.get('discountAmount') as string || undefined,
+export async function createOrder(data: {
+    delivery_address: {
+        address_line_1: string;
+        address_line_2?: string;
+        city: string;
+        area?: string;
+        notes?: string;
+        latitude?: number;
+        longitude?: number;
     };
-
-    const validation = placeOrderSchema.safeParse(rawData);
-    if (!validation.success) {
-        return { success: false, error: validation.error.errors[0].message };
-    }
-
-    const { address, city, phone, notes, discountCodeId, discountAmount } = validation.data;
-
-    // Get cart items
-    const { data: cartItems, error: cartError } = await supabase
-        .from('cart_items')
-        .select('id, quantity, product_id')
-        .eq('profile_id', user.id);
-
-    if (cartError) {
-        console.error('[buyerPlaceOrder] Error fetching cart:', cartError);
-        return { success: false, error: 'Failed to fetch cart' };
-    }
-
-    if (!cartItems || cartItems.length === 0) {
-        return { success: false, error: 'Cart is empty' };
-    }
-
-    // Fetch products and seller info
-    const productIds = cartItems.map(item => item.product_id);
-    const { data: products } = await supabase
-        .from('products')
-        .select('id, title, price_jod, stock, seller_id, is_active, sellers(id, profile_id)')
-        .in('id', productIds);
-
-    if (!products) {
-        return { success: false, error: 'Failed to fetch products' };
-    }
-
-    // Map products
-    const productMap = new Map(products.map(p => [p.id, p]));
-
-    // Validate and group by seller
-    const ordersBySeller: Record<string, {
-        items: { cartItemId: string; productId: string; quantity: number; title: string; price: number; stock: number }[];
-        subtotal: number;
-        sellerProfileId: string;
-    }> = {};
-
-    for (const item of cartItems) {
-        const product = productMap.get(item.product_id);
-
-        if (!product || !product.is_active) {
-            return { success: false, error: 'Product is no longer available' };
+    notes?: string;
+    use_coins?: number;
+    discount_code?: string;
+}): Promise<ActionResult<Order>> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
         }
 
-        if (item.quantity > product.stock) {
-            return { success: false, error: `Not enough stock for ${product.title}` };
+        const supabase = await createUserClient();
+
+        // Get cart with items
+        const { data: cart, error: cartError } = await supabase
+            .from("carts")
+            .select(
+                `
+        id,
+        items:cart_items(
+          id,
+          product_id,
+          variant_id,
+          quantity,
+          unit_price,
+          product:products(
+            id,
+            name,
+            seller_id,
+            stock_quantity,
+            is_active,
+            seller:sellers(id, profile_id, business_address)
+          ),
+          variant:product_variants(id, name, stock_quantity, is_active)
+        )
+      `
+            )
+            .eq("profile_id", user.id)
+            .maybeSingle();
+
+        if (cartError) {
+            console.error("[createOrder] Cart error:", cartError);
+            return { success: false, error: cartError.message };
         }
 
-        const seller = product.sellers as any; // Type assertion since joined
-        if (!ordersBySeller[product.seller_id]) {
-            ordersBySeller[product.seller_id] = {
-                items: [],
-                subtotal: 0,
-                sellerProfileId: seller?.profile_id
+        if (!cart || !cart.items || cart.items.length === 0) {
+            return { success: false, error: "Cart is empty" };
+        }
+
+        // Group items by seller
+        const itemsBySeller = new Map<string, typeof cart.items>();
+
+        for (const item of cart.items) {
+            const product = item.product as unknown as {
+                seller_id: string;
+                stock_quantity: number;
+                is_active: boolean;
+                name: string;
+            } | null;
+
+            if (!product || !product.is_active) {
+                return { success: false, error: `Product not available` };
+            }
+
+            const variant = item.variant as unknown as { stock_quantity: number; is_active: boolean; name: string } | null;
+            const availableStock = variant?.stock_quantity ?? product.stock_quantity;
+
+            if (item.quantity > availableStock) {
+                return { success: false, error: `Insufficient stock for ${product.name}` };
+            }
+
+            const sellerId = product.seller_id;
+            if (!itemsBySeller.has(sellerId)) {
+                itemsBySeller.set(sellerId, []);
+            }
+            itemsBySeller.get(sellerId)!.push(item);
+        }
+
+        // For now, we only support single-seller orders
+        if (itemsBySeller.size > 1) {
+            return { success: false, error: "Orders from multiple sellers not supported yet" };
+        }
+
+        const [sellerId, items] = [...itemsBySeller.entries()][0]!;
+
+        // Calculate subtotal
+        const subtotal = items.reduce(
+            (sum, item) => sum + Number(item.unit_price) * item.quantity,
+            0
+        );
+
+        // Get coins balance if using coins
+        let coinsDiscount = 0;
+        let coinsUsed = 0;
+        if (data.use_coins && data.use_coins > 0) {
+            const { data: buyer } = await supabase
+                .from("buyers")
+                .select("coins_balance")
+                .eq("profile_id", user.id)
+                .maybeSingle();
+
+            if (buyer && buyer.coins_balance >= data.use_coins) {
+                coinsUsed = Math.min(data.use_coins, buyer.coins_balance);
+                coinsDiscount = coinsUsed * 0.01; // 1 coin = 0.01 JOD
+            }
+        }
+
+        // Apply discount code if provided
+        let discountAmount = 0;
+        if (data.discount_code) {
+            const { data: discount } = await supabase
+                .from("discounts")
+                .select("*")
+                .eq("code", data.discount_code.toUpperCase())
+                .eq("is_active", true)
+                .gte("valid_until", new Date().toISOString())
+                .lte("valid_from", new Date().toISOString())
+                .maybeSingle();
+
+            if (discount) {
+                if (discount.min_order_amount && subtotal < Number(discount.min_order_amount)) {
+                    return { success: false, error: "Order does not meet minimum amount for discount" };
+                }
+
+                if (discount.usage_limit && discount.usage_count >= discount.usage_limit) {
+                    return { success: false, error: "Discount code usage limit reached" };
+                }
+
+                if (discount.discount_type === "percentage") {
+                    discountAmount = subtotal * (Number(discount.discount_value) / 100);
+                    if (discount.max_discount_amount) {
+                        discountAmount = Math.min(discountAmount, Number(discount.max_discount_amount));
+                    }
+                } else {
+                    discountAmount = Number(discount.discount_value);
+                }
+
+                // Increment usage count
+                await supabase
+                    .from("discounts")
+                    .update({ usage_count: discount.usage_count + 1 })
+                    .eq("id", discount.id);
+            }
+        }
+
+        const deliveryFee = 2.5; // Fixed delivery fee
+        const total = Math.max(0, subtotal + deliveryFee - discountAmount - coinsDiscount);
+
+        // Create order
+        const { data: order, error: orderError } = await supabase
+            .from("orders")
+            .insert({
+                buyer_id: user.id,
+                seller_id: sellerId,
+                status: "placed",
+                subtotal,
+                delivery_fee: deliveryFee,
+                discount_amount: discountAmount,
+                coins_used: coinsUsed,
+                coins_discount: coinsDiscount,
+                total,
+                delivery_address: data.delivery_address,
+                notes: data.notes || null,
+            })
+            .select()
+            .maybeSingle();
+
+        if (orderError) {
+            console.error("[createOrder] Order error:", orderError);
+            return { success: false, error: orderError.message };
+        }
+
+        // Create order items
+        const orderItems = items.map((item) => ({
+            order_id: order!.id,
+            product_id: item.product_id,
+            variant_id: item.variant_id || null,
+            product_name: ((item.product as unknown as { name: string }) || { name: 'Product' }).name,
+            variant_name: ((item.variant as unknown as { name: string } | null))?.name || null,
+            quantity: item.quantity,
+            unit_price: Number(item.unit_price),
+            total_price: Number(item.unit_price) * item.quantity,
+        }));
+
+        const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
+
+        if (itemsError) {
+            console.error("[createOrder] Items error:", itemsError);
+            // Rollback order
+            await supabase.from("orders").delete().eq("id", order!.id);
+            return { success: false, error: itemsError.message };
+        }
+
+        // Get seller address for pickup
+        const firstItem = items[0];
+        const sellerAddress = ((firstItem?.product as unknown as { seller: { business_address: string } })?.seller)?.business_address || "Seller Location";
+
+        // Create delivery record
+        const { error: deliveryError } = await supabase.from("deliveries").insert({
+            order_id: order!.id,
+            status: "available",
+            pickup_address: { address: sellerAddress },
+            delivery_address: data.delivery_address,
+        });
+
+        if (deliveryError) {
+            console.error("[createOrder] Delivery error:", deliveryError);
+        }
+
+        // Deduct coins if used
+        if (coinsUsed > 0) {
+            const { data: buyer } = await supabase
+                .from("buyers")
+                .select("coins_balance")
+                .eq("profile_id", user.id)
+                .maybeSingle();
+
+            if (buyer) {
+                await supabase
+                    .from("buyers")
+                    .update({ coins_balance: buyer.coins_balance - coinsUsed })
+                    .eq("profile_id", user.id);
+
+                await supabase.from("coins_ledger").insert({
+                    profile_id: user.id,
+                    type: "debit",
+                    amount: coinsUsed,
+                    balance_before: buyer.coins_balance,
+                    balance_after: buyer.coins_balance - coinsUsed,
+                    description: `Used for order ${order!.order_number}`,
+                    reference_type: "order",
+                    reference_id: order!.id,
+                });
+            }
+        }
+
+        // Update stock
+        for (const item of items) {
+            if (item.variant_id) {
+                await supabase
+                    .from("product_variants")
+                    .update({
+                        stock_quantity: (((item.variant as unknown as { stock_quantity: number })).stock_quantity) - item.quantity,
+                    })
+                    .eq("id", item.variant_id);
+            } else {
+                await supabase
+                    .from("products")
+                    .update({
+                        stock_quantity: (((item.product as unknown as { stock_quantity: number })).stock_quantity) - item.quantity,
+                    })
+                    .eq("id", item.product_id);
+            }
+        }
+
+        // Clear cart
+        await supabase.from("cart_items").delete().eq("cart_id", cart.id);
+
+        // Create notification for seller
+        const { data: seller } = await supabase
+            .from("sellers")
+            .select("profile_id")
+            .eq("id", sellerId)
+            .maybeSingle();
+
+        if (seller) {
+            await supabase.from("notifications").insert({
+                profile_id: seller.profile_id,
+                type: "order_update",
+                title: "New Order Received",
+                title_ar: "طلب جديد",
+                message: `You have received a new order #${order!.order_number}`,
+                message_ar: `لقد استلمت طلباً جديداً #${order!.order_number}`,
+                data: { order_id: order!.id },
+            });
+        }
+
+        return { success: true, data: order as Order };
+    } catch (error) {
+        console.error("[createOrder] Exception:", error);
+        return { success: false, error: "Failed to create order" };
+    }
+}
+
+export async function getOrders(): Promise<ActionResult<OrderWithItems[]>> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
+        }
+
+        const supabase = await createUserClient();
+
+        const { data: orders, error } = await supabase
+            .from("orders")
+            .select(
+                `
+        *,
+        items:order_items(*),
+        delivery:deliveries(*),
+        seller:sellers(business_name)
+      `
+            )
+            .eq("buyer_id", user.id)
+            .order("created_at", { ascending: false });
+
+        if (error) {
+            console.error("[getOrders] Error:", error);
+            return { success: false, error: error.message };
+        }
+
+        const ordersWithSellerName = orders?.map((order) => ({
+            ...order,
+            seller_name: ((order.seller as unknown as { business_name: string }))?.business_name,
+        })) || [];
+
+        return { success: true, data: ordersWithSellerName as OrderWithItems[] };
+    } catch (error) {
+        console.error("[getOrders] Exception:", error);
+        return { success: false, error: "Failed to get orders" };
+    }
+}
+
+export async function getOrderById(
+    orderId: string
+): Promise<ActionResult<OrderWithItems>> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
+        }
+
+        const supabase = await createUserClient();
+
+        const { data: order, error } = await supabase
+            .from("orders")
+            .select(
+                `
+        *,
+        items:order_items(*),
+        delivery:deliveries(*),
+        seller:sellers(business_name, profile_id)
+      `
+            )
+            .eq("id", orderId)
+            .maybeSingle();
+
+        if (error) {
+            console.error("[getOrderById] Error:", error);
+            return { success: false, error: error.message };
+        }
+
+        if (!order) {
+            return { success: false, error: "Order not found" };
+        }
+
+        // Verify access
+        const sellerProfileId = ((order.seller as unknown as { profile_id: string }))?.profile_id;
+        if (order.buyer_id !== user.id && sellerProfileId !== user.id) {
+            return { success: false, error: "Unauthorized" };
+        }
+
+        return {
+            success: true,
+            data: {
+                ...order,
+                seller_name: ((order.seller as unknown as { business_name: string }))?.business_name,
+            } as OrderWithItems,
+        };
+    } catch (error) {
+        console.error("[getOrderById] Exception:", error);
+        return { success: false, error: "Failed to get order" };
+    }
+}
+
+export async function getSellerOrders(): Promise<ActionResult<OrderWithItems[]>> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
+        }
+
+        const supabase = await createUserClient();
+
+        // Get seller ID
+        const { data: seller } = await supabase
+            .from("sellers")
+            .select("id")
+            .eq("profile_id", user.id)
+            .maybeSingle();
+
+        if (!seller) {
+            return { success: false, error: "Not a seller" };
+        }
+
+        const { data: orders, error } = await supabase
+            .from("orders")
+            .select(
+                `
+        *,
+        items:order_items(*),
+        delivery:deliveries(*)
+      `
+            )
+            .eq("seller_id", seller.id)
+            .order("created_at", { ascending: false });
+
+        if (error) {
+            console.error("[getSellerOrders] Error:", error);
+            return { success: false, error: error.message };
+        }
+
+        return { success: true, data: orders as OrderWithItems[] };
+    } catch (error) {
+        console.error("[getSellerOrders] Exception:", error);
+        return { success: false, error: "Failed to get seller orders" };
+    }
+}
+
+// State machine transitions
+export async function updateOrderStatus(
+    orderId: string,
+    newStatus: OrderStatus,
+    reason?: string
+): Promise<ActionResult> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
+        }
+
+        const supabase = await createUserClient();
+
+        // Get current order
+        const { data: order } = await supabase
+            .from("orders")
+            .select("status, seller_id, buyer_id, total, sellers!inner(profile_id)")
+            .eq("id", orderId)
+            .maybeSingle();
+
+        if (!order) {
+            return { success: false, error: "Order not found" };
+        }
+
+        const currentStatus = order.status as OrderStatus;
+        const sellerProfileId = ((order as unknown as { sellers: { profile_id: string } }).sellers).profile_id;
+
+        // Verify authorization
+        const isSeller = sellerProfileId === user.id;
+        const isBuyer = order.buyer_id === user.id;
+
+        // Only sellers can accept, prepare, mark ready, complete
+        // Only buyers can cancel (within allowed states)
+        if (newStatus === "cancelled") {
+            if (!isBuyer && !isSeller) {
+                return { success: false, error: "Unauthorized" };
+            }
+        } else {
+            if (!isSeller) {
+                return { success: false, error: "Only seller can update order status" };
+            }
+        }
+
+        // Validate transition using state machine
+        const validTransitions = VALID_ORDER_TRANSITIONS[currentStatus];
+        if (!validTransitions?.includes(newStatus)) {
+            return {
+                success: false,
+                error: `Invalid transition from ${currentStatus} to ${newStatus}`,
             };
         }
 
-        ordersBySeller[product.seller_id].items.push({
-            cartItemId: item.id,
-            productId: product.id,
-            quantity: item.quantity,
-            title: product.title,
-            price: product.price_jod,
-            stock: product.stock,
-        });
-        ordersBySeller[product.seller_id].subtotal += product.price_jod * item.quantity;
-    }
-
-    const createdOrderIds: string[] = [];
-    const deliveryFee = 2.00;
-
-    // Calculate discount per order
-    const orderDiscountAmount = discountAmount || 0;
-    let discountApplied = false;
-
-    // Create orders for each seller
-    for (const [sellerId, orderData] of Object.entries(ordersBySeller)) {
-        const thisOrderDiscount = !discountApplied && orderDiscountAmount > 0
-            ? Math.min(orderDiscountAmount, orderData.subtotal)
-            : 0;
-        const total = orderData.subtotal + deliveryFee - thisOrderDiscount;
-
-        const { data: order, error: orderError } = await supabase
-            .from('orders')
-            .insert({
-                buyer_profile_id: user.id,
-                seller_id: sellerId,
-                status: 'placed',
-                subtotal: orderData.subtotal,
-                delivery_fee: deliveryFee,
-                total,
-                discount_code_id: thisOrderDiscount > 0 ? discountCodeId : null,
-                discount_amount: thisOrderDiscount,
-                address,
-                city,
-                phone,
-                notes,
-            })
-            .select('id')
-            .single();
-
-        if (orderError || !order) {
-            console.error('[buyerPlaceOrder] Error creating order:', orderError);
-            return { success: false, error: 'Failed to create order' };
+        // Update order status (trigger will validate and set timestamps)
+        const updateData: Record<string, unknown> = { status: newStatus };
+        if (newStatus === "cancelled" && reason) {
+            updateData.cancellation_reason = reason;
         }
 
-        createdOrderIds.push(order.id);
+        const { error } = await supabase
+            .from("orders")
+            .update(updateData)
+            .eq("id", orderId);
 
-        // Track discount redemption if applied
-        if (thisOrderDiscount > 0 && discountCodeId) {
-            await applyDiscountToOrder(order.id, discountCodeId, thisOrderDiscount, user.id);
-            discountApplied = true;
-
-            // Notify buyer about discount
-            await createNotification(
-                user.id,
-                'discount',
-                'notifications.discount.title',
-                'notifications.discount.applied',
-                { orderId: order.id, amount: thisOrderDiscount },
-                `discount:${order.id}`
-            );
+        if (error) {
+            console.error("[updateOrderStatus] Error:", error);
+            return { success: false, error: error.message };
         }
 
-        // Notify Buyer: Order Placed
-        await createNotification(
-            user.id,
-            'order_status',
-            'notifications.orderStatus.title',
-            'notifications.orderStatus.placed',
-            { orderId: order.id, total },
-            `order_status:${order.id}:placed`
-        );
+        // Handle cancellation refunds
+        if (newStatus === "cancelled") {
+            // If order was placed, refund coins
+            const { data: orderDetails } = await supabase
+                .from("orders")
+                .select("coins_used")
+                .eq("id", orderId)
+                .maybeSingle();
 
-        // Notify Seller: New Order
-        if (orderData.sellerProfileId) {
-            await createNotification(
-                orderData.sellerProfileId,
-                'order_status',
-                'notifications.orderStatus.title',
-                'notifications.orderStatus.placed', // We can reuse 'placed' or add 'new_order' key. Using 'placed' for now as "New Order Placed"
-                { orderId: order.id, total },
-                `order_status:${order.id}:placed_seller`
-            );
-        }
+            if (orderDetails && orderDetails.coins_used > 0) {
+                const { data: buyer } = await supabase
+                    .from("buyers")
+                    .select("coins_balance")
+                    .eq("profile_id", order.buyer_id)
+                    .maybeSingle();
 
-        // Create order items and update stock
-        for (const item of orderData.items) {
-            const lineTotal = item.price * item.quantity;
+                if (buyer) {
+                    await supabase
+                        .from("buyers")
+                        .update({ coins_balance: buyer.coins_balance + orderDetails.coins_used })
+                        .eq("profile_id", order.buyer_id);
 
-            await supabase.from('order_items').insert({
-                order_id: order.id,
-                product_id: item.productId,
-                title_snapshot: item.title,
-                price_snapshot: item.price,
-                quantity: item.quantity,
-                line_total: lineTotal,
-            });
-
-            await supabase.from('products').update({ stock: item.stock - item.quantity }).eq('id', item.productId);
-        }
-
-        // Create delivery record
-        await supabase.from('deliveries').insert({ order_id: order.id, status: 'available' });
-    }
-
-    // Clear cart
-    await supabase.from('cart_items').delete().eq('profile_id', user.id);
-
-    return { success: true, data: { orderId: createdOrderIds[0] } };
-}
-
-// Cancel Order (Buyer - only if status is 'placed')
-export async function buyerCancelOrder(formData: FormData): Promise<ActionResult> {
-    const supabase = await createClient();
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-        return { success: false, error: 'Unauthorized' };
-    }
-
-    const rawData = {
-        orderId: formData.get('orderId') as string,
-        reason: formData.get('reason') as string || undefined,
-    };
-
-    const validation = cancelOrderSchema.safeParse(rawData);
-    if (!validation.success) {
-        return { success: false, error: validation.error.errors[0].message };
-    }
-
-    const { orderId, reason } = validation.data;
-
-    const { data: order } = await supabase
-        .from('orders')
-        .select('id, status, buyer_profile_id, sellers(profile_id)')
-        .eq('id', orderId)
-        .maybeSingle();
-
-    if (!order) return { success: false, error: 'Order not found' };
-    if (order.buyer_profile_id !== user.id) return { success: false, error: 'Unauthorized' };
-    if (order.status !== 'placed') return { success: false, error: 'Order cannot be cancelled at this stage' };
-
-    await supabase.from('orders').update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancellation_reason: reason }).eq('id', orderId);
-
-    // Notify Seller
-    const seller = order.sellers as any;
-    if (seller?.profile_id) {
-        await createNotification(
-            seller.profile_id,
-            'order_status',
-            'notifications.orderStatus.title',
-            'notifications.orderStatus.cancelled', // Need to add this key
-            { orderId: orderId, reason },
-            `order_status:${orderId}:cancelled`
-        );
-    }
-
-    // Restore product stock
-    const { data: orderItems } = await supabase.from('order_items').select('product_id, quantity').eq('order_id', orderId);
-
-    if (orderItems) {
-        for (const item of orderItems) {
-            if (item.product_id) {
-                const { data: product } = await supabase.from('products').select('stock').eq('id', item.product_id).maybeSingle();
-                if (product) {
-                    await supabase.from('products').update({ stock: product.stock + item.quantity }).eq('id', item.product_id);
+                    await supabase.from("coins_ledger").insert({
+                        profile_id: order.buyer_id,
+                        type: "refund",
+                        amount: orderDetails.coins_used,
+                        balance_before: buyer.coins_balance,
+                        balance_after: buyer.coins_balance + orderDetails.coins_used,
+                        description: "Order cancellation refund",
+                        reference_type: "order",
+                        reference_id: orderId,
+                    });
                 }
             }
         }
-    }
 
-    return { success: true };
+        // Create notification
+        await supabase.from("notifications").insert({
+            profile_id: order.buyer_id,
+            type: "order_update",
+            title: `Order ${newStatus.replace("_", " ")}`,
+            title_ar: getStatusArabic(newStatus),
+            message: `Your order status has been updated to ${newStatus.replace("_", " ")}`,
+            message_ar: `تم تحديث حالة طلبك إلى ${getStatusArabic(newStatus)}`,
+            data: { order_id: orderId, status: newStatus },
+        });
+
+        return { success: true };
+    } catch (error) {
+        console.error("[updateOrderStatus] Exception:", error);
+        return { success: false, error: "Failed to update order status" };
+    }
 }
 
-// Seller Accept Order
-export async function sellerAcceptOrder(formData: FormData): Promise<ActionResult> {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: 'Unauthorized' };
-
-    const orderId = formData.get('orderId') as string;
-    const { data: seller } = await supabase.from('sellers').select('id').eq('profile_id', user.id).maybeSingle();
-    if (!seller) return { success: false, error: 'Not a seller' };
-
-    const { data: order } = await supabase.from('orders').select('id, status, seller_id, buyer_profile_id').eq('id', orderId).maybeSingle();
-    if (!order || order.seller_id !== seller.id) return { success: false, error: 'Order not found' };
-    if (order.status !== 'placed') return { success: false, error: 'Cannot accept order in current status' };
-
-    await supabase.from('orders').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', orderId);
-
-    // Notify Buyer
-    if (order.buyer_profile_id) {
-        await createNotification(
-            order.buyer_profile_id,
-            'order_status',
-            'notifications.orderStatus.title',
-            'notifications.orderStatus.accepted',
-            { orderId },
-            `order_status:${orderId}:accepted`
-        );
-    }
-
-    return { success: true };
+function getStatusArabic(status: OrderStatus): string {
+    const statusMap: Record<OrderStatus, string> = {
+        placed: "تم الطلب",
+        accepted: "تم القبول",
+        preparing: "قيد التحضير",
+        ready_for_pickup: "جاهز للاستلام",
+        completed: "مكتمل",
+        cancelled: "ملغي",
+    };
+    return statusMap[status] || status;
 }
 
-// Seller Mark Preparing
-export async function sellerMarkPreparing(formData: FormData): Promise<ActionResult> {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: 'Unauthorized' };
-
-    const orderId = formData.get('orderId') as string;
-    const { data: seller } = await supabase.from('sellers').select('id').eq('profile_id', user.id).maybeSingle();
-    if (!seller) return { success: false, error: 'Not a seller' };
-
-    const { data: order } = await supabase.from('orders').select('id, status, seller_id, buyer_profile_id').eq('id', orderId).maybeSingle();
-    if (!order || order.seller_id !== seller.id) return { success: false, error: 'Order not found' };
-    if (order.status !== 'accepted') return { success: false, error: 'Cannot mark as preparing in current status' };
-
-    await supabase.from('orders').update({ status: 'preparing', preparing_at: new Date().toISOString() }).eq('id', orderId);
-
-    // Notify Buyer
-    if (order.buyer_profile_id) {
-        await createNotification(
-            order.buyer_profile_id,
-            'order_status',
-            'notifications.orderStatus.title',
-            'notifications.orderStatus.preparing',
-            { orderId },
-            `order_status:${orderId}:preparing`
-        );
-    }
-
-    return { success: true };
+// Seller-specific shortcuts
+export async function acceptOrder(orderId: string): Promise<ActionResult> {
+    return updateOrderStatus(orderId, "accepted");
 }
 
-// Seller Mark Ready for Pickup
-export async function sellerMarkReadyForPickup(formData: FormData): Promise<ActionResult> {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: 'Unauthorized' };
+export async function startPreparing(orderId: string): Promise<ActionResult> {
+    return updateOrderStatus(orderId, "preparing");
+}
 
-    const orderId = formData.get('orderId') as string;
-    const { data: seller } = await supabase.from('sellers').select('id').eq('profile_id', user.id).maybeSingle();
-    if (!seller) return { success: false, error: 'Not a seller' };
+export async function markOrderReady(orderId: string): Promise<ActionResult> {
+    return updateOrderStatus(orderId, "ready_for_pickup");
+}
 
-    const { data: order } = await supabase.from('orders').select('id, status, seller_id, buyer_profile_id').eq('id', orderId).maybeSingle();
-    if (!order || order.seller_id !== seller.id) return { success: false, error: 'Order not found' };
-    if (order.status !== 'preparing') return { success: false, error: 'Cannot mark as ready in current status' };
+export async function completeOrder(orderId: string): Promise<ActionResult> {
+    return updateOrderStatus(orderId, "completed");
+}
 
-    await supabase.from('orders').update({ status: 'ready_for_pickup', ready_at: new Date().toISOString() }).eq('id', orderId);
-
-    // Notify Buyer
-    if (order.buyer_profile_id) {
-        await createNotification(
-            order.buyer_profile_id,
-            'order_status',
-            'notifications.orderStatus.title',
-            'notifications.orderStatus.ready_for_pickup',
-            { orderId },
-            `order_status:${orderId}:ready_for_pickup`
-        );
-    }
-
-    return { success: true };
+export async function cancelOrder(
+    orderId: string,
+    reason?: string
+): Promise<ActionResult> {
+    return updateOrderStatus(orderId, "cancelled", reason);
 }

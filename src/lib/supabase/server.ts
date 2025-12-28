@@ -1,7 +1,10 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
-export async function createClient() {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SupabaseClient = ReturnType<typeof createServerClient<any>>;
+
+export async function createUserClient(): Promise<SupabaseClient> {
     const cookieStore = await cookies();
 
     return createServerClient(
@@ -12,37 +15,51 @@ export async function createClient() {
                 getAll() {
                     return cookieStore.getAll();
                 },
-                setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+                setAll(cookiesToSet) {
                     try {
                         cookiesToSet.forEach(({ name, value, options }) =>
                             cookieStore.set(name, value, options)
                         );
                     } catch {
-                        // Ignore errors in Server Components
+                        // The `setAll` method was called from a Server Component.
                     }
                 },
             },
         }
-        // ...existing code...
     );
 }
 
-export async function createAdminClient() {
+export async function createAdminClient(): Promise<SupabaseClient> {
+    const cookieStore = await cookies();
+
     return createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
         {
             cookies: {
-                getAll() { return []; },
-                setAll() { }
-            }
+                getAll() {
+                    return cookieStore.getAll();
+                },
+                setAll(cookiesToSet) {
+                    try {
+                        cookiesToSet.forEach(({ name, value, options }) =>
+                            cookieStore.set(name, value, options)
+                        );
+                    } catch {
+                        // The `setAll` method was called from a Server Component.
+                    }
+                },
+            },
         }
     );
 }
 
 export async function getUser() {
-    const supabase = await createClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const supabase = await createUserClient();
+    const {
+        data: { user },
+        error,
+    } = await supabase.auth.getUser();
 
     if (error || !user) {
         return null;
@@ -52,21 +69,20 @@ export async function getUser() {
 }
 
 export async function getProfile() {
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    const user = await getUser();
+    if (!user) {
         return null;
     }
 
-    const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
+    const supabase = await createUserClient();
+    const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
         .maybeSingle();
 
-    if (profileError) {
-        console.error('[getProfile] Error fetching profile:', profileError);
+    if (error) {
+        console.error("[getProfile] Error:", error);
         return null;
     }
 

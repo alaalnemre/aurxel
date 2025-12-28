@@ -1,258 +1,378 @@
-'use server';
+"use server";
 
-import { z } from 'zod';
-import { createClient } from '@/lib/supabase/server';
-import type { ActionResult } from './auth';
+import { createUserClient, createAdminClient, getUser } from "@/lib/supabase/server";
+import type { Profile, VerificationStatus } from "@/types/database";
 
-// Validation Schemas
-const updateProfileSchema = z.object({
-    fullName: z.string().min(2, 'Name must be at least 2 characters').optional(),
-    phone: z.string().optional(),
-    city: z.string().optional(),
-    address: z.string().optional(),
-});
-
-const sellerRequestSchema = z.object({
-    storeName: z.string().min(2, 'Store name must be at least 2 characters'),
-    description: z.string().optional(),
-    storeAddress: z.string().min(5, 'Store address is required'),
-    storeCity: z.string().min(2, 'City is required'),
-    storePhone: z.string().min(9, 'Valid phone number is required'),
-});
-
-const driverRequestSchema = z.object({
-    vehicleType: z.string().min(2, 'Vehicle type is required'),
-    plateNumber: z.string().min(3, 'Plate number is required'),
-});
-
-// Update Profile
-export async function updateProfile(formData: FormData): Promise<ActionResult> {
-    const supabase = await createClient();
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-        return { success: false, error: 'Unauthorized' };
-    }
-
-    const rawData = {
-        fullName: formData.get('fullName') as string || undefined,
-        phone: formData.get('phone') as string || undefined,
-        city: formData.get('city') as string || undefined,
-        address: formData.get('address') as string || undefined,
-    };
-
-    const validation = updateProfileSchema.safeParse(rawData);
-    if (!validation.success) {
-        return { success: false, error: validation.error.errors[0].message };
-    }
-
-    const { fullName, phone, city, address } = validation.data;
-
-    const { error } = await supabase
-        .from('profiles')
-        .update({
-            full_name: fullName,
-            phone,
-            city,
-            address,
-        })
-        .eq('id', user.id);
-
-    if (error) {
-        console.error('[updateProfile] Error:', error);
-        return { success: false, error: error.message };
-    }
-
-    return { success: true };
+export interface ActionResult<T = void> {
+    success: boolean;
+    data?: T;
+    error?: string;
 }
 
-// Request Seller Activation (idempotent - handles both new and existing seller records)
-export async function requestSellerActivation(formData: FormData): Promise<ActionResult> {
-    const supabase = await createClient();
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-        return { success: false, error: 'Unauthorized' };
-    }
-
-    // Check if already verified (cannot re-submit if verified)
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('seller_verified')
-        .eq('id', user.id)
-        .maybeSingle();
-
-    if (profile?.seller_verified) {
-        return { success: false, error: 'Already verified as seller' };
-    }
-
-    // Validate form data
-    const rawData = {
-        storeName: formData.get('storeName') as string,
-        description: formData.get('description') as string || undefined,
-        storeAddress: formData.get('storeAddress') as string,
-        storeCity: formData.get('storeCity') as string,
-        storePhone: formData.get('storePhone') as string,
-    };
-
-    const validation = sellerRequestSchema.safeParse(rawData);
-    if (!validation.success) {
-        return { success: false, error: validation.error.errors[0].message };
-    }
-
-    const { storeName, description, storeAddress, storeCity, storePhone } = validation.data;
-
-    // Check if a seller record already exists for this profile
-    const { data: existingSeller, error: fetchError } = await supabase
-        .from('sellers')
-        .select('id')
-        .eq('profile_id', user.id)
-        .maybeSingle();
-
-    if (fetchError) {
-        console.error('[requestSellerActivation] Error fetching existing seller:', fetchError);
-        return { success: false, error: 'Failed to check existing seller record' };
-    }
-
-    if (existingSeller) {
-        // UPDATE existing seller record (re-submission)
-        const { error: updateError } = await supabase
-            .from('sellers')
-            .update({
-                store_name: storeName,
-                description,
-                store_address: storeAddress,
-                store_city: storeCity,
-                store_phone: storePhone,
-                status: 'pending', // Reset status to pending on re-submission
-            })
-            .eq('id', existingSeller.id);
-
-        if (updateError) {
-            console.error('[requestSellerActivation] Error updating seller:', updateError);
-            return { success: false, error: updateError.message };
+export async function getProfile(): Promise<ActionResult<Profile>> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
         }
-    } else {
-        // INSERT new seller record
-        const { error: insertError } = await supabase
-            .from('sellers')
-            .insert({
-                profile_id: user.id,
-                store_name: storeName,
-                description,
-                store_address: storeAddress,
-                store_city: storeCity,
-                store_phone: storePhone,
-                status: 'pending',
-            });
 
-        if (insertError) {
-            console.error('[requestSellerActivation] Error creating seller:', insertError);
-            return { success: false, error: insertError.message };
+        const supabase = await createUserClient();
+        const { data: profile, error } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", user.id)
+            .maybeSingle();
+
+        if (error) {
+            console.error("[getProfile] Error:", error);
+            return { success: false, error: error.message };
         }
+
+        if (!profile) {
+            return { success: false, error: "Profile not found" };
+        }
+
+        return { success: true, data: profile as Profile };
+    } catch (error) {
+        console.error("[getProfile] Exception:", error);
+        return { success: false, error: "Failed to get profile" };
     }
-
-    // Update profile flag (idempotent - safe to set multiple times)
-    const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ seller_requested: true })
-        .eq('id', user.id);
-
-    if (profileError) {
-        console.error('[requestSellerActivation] Error updating profile:', profileError);
-        return { success: false, error: profileError.message };
-    }
-
-    return { success: true };
 }
 
-// Request Driver Activation (idempotent - handles both new and existing driver records)
-export async function requestDriverActivation(formData: FormData): Promise<ActionResult> {
-    const supabase = await createClient();
+export async function updateProfile(data: {
+    full_name?: string;
+    phone?: string;
+    avatar_url?: string;
+}): Promise<ActionResult<Profile>> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
+        }
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-        return { success: false, error: 'Unauthorized' };
-    }
-
-    // Check if already verified (cannot re-submit if verified)
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('driver_verified')
-        .eq('id', user.id)
-        .maybeSingle();
-
-    if (profile?.driver_verified) {
-        return { success: false, error: 'Already verified as driver' };
-    }
-
-    // Validate form data
-    const rawData = {
-        vehicleType: formData.get('vehicleType') as string,
-        plateNumber: formData.get('plateNumber') as string,
-    };
-
-    const validation = driverRequestSchema.safeParse(rawData);
-    if (!validation.success) {
-        return { success: false, error: validation.error.errors[0].message };
-    }
-
-    const { vehicleType, plateNumber } = validation.data;
-
-    // Check if a driver record already exists for this profile
-    const { data: existingDriver, error: fetchError } = await supabase
-        .from('drivers')
-        .select('id')
-        .eq('profile_id', user.id)
-        .maybeSingle();
-
-    if (fetchError) {
-        console.error('[requestDriverActivation] Error fetching existing driver:', fetchError);
-        return { success: false, error: 'Failed to check existing driver record' };
-    }
-
-    if (existingDriver) {
-        // UPDATE existing driver record (re-submission)
-        const { error: updateError } = await supabase
-            .from('drivers')
+        const supabase = await createUserClient();
+        const { data: profile, error } = await supabase
+            .from("profiles")
             .update({
-                vehicle_type: vehicleType,
-                plate_number: plateNumber,
-                status: 'pending', // Reset status to pending on re-submission
+                ...data,
+                updated_at: new Date().toISOString(),
             })
-            .eq('id', existingDriver.id);
+            .eq("id", user.id)
+            .select()
+            .maybeSingle();
 
-        if (updateError) {
-            console.error('[requestDriverActivation] Error updating driver:', updateError);
-            return { success: false, error: updateError.message };
+        if (error) {
+            console.error("[updateProfile] Error:", error);
+            return { success: false, error: error.message };
         }
-    } else {
-        // INSERT new driver record
-        const { error: insertError } = await supabase
-            .from('drivers')
-            .insert({
-                profile_id: user.id,
-                vehicle_type: vehicleType,
-                plate_number: plateNumber,
-                status: 'pending',
-            });
 
-        if (insertError) {
-            console.error('[requestDriverActivation] Error creating driver:', insertError);
-            return { success: false, error: insertError.message };
+        return { success: true, data: profile as Profile };
+    } catch (error) {
+        console.error("[updateProfile] Exception:", error);
+        return { success: false, error: "Failed to update profile" };
+    }
+}
+
+export async function becomeSeller(data: {
+    business_name: string;
+    business_description?: string;
+    business_address: string;
+}): Promise<ActionResult> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
         }
+
+        const supabase = await createUserClient();
+
+        // Check if already a seller
+        const { data: existingSeller } = await supabase
+            .from("sellers")
+            .select("id")
+            .eq("profile_id", user.id)
+            .maybeSingle();
+
+        if (existingSeller) {
+            return { success: false, error: "Already registered as seller" };
+        }
+
+        // Create seller record
+        const { error: sellerError } = await supabase.from("sellers").insert({
+            profile_id: user.id,
+            business_name: data.business_name,
+            business_description: data.business_description || null,
+            business_address: data.business_address,
+        });
+
+        if (sellerError) {
+            console.error("[becomeSeller] Seller insert error:", sellerError);
+            return { success: false, error: sellerError.message };
+        }
+
+        // Update profile with seller flag and verification status
+        const { error: profileError } = await supabase
+            .from("profiles")
+            .update({
+                is_seller: true,
+                seller_verification_status: "pending" as VerificationStatus,
+                updated_at: new Date().toISOString(),
+            })
+            .eq("id", user.id);
+
+        if (profileError) {
+            console.error("[becomeSeller] Profile update error:", profileError);
+            return { success: false, error: profileError.message };
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error("[becomeSeller] Exception:", error);
+        return { success: false, error: "Failed to register as seller" };
     }
+}
 
-    // Update profile flag (idempotent - safe to set multiple times)
-    const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ driver_requested: true })
-        .eq('id', user.id);
+export async function becomeDriver(data: {
+    license_number: string;
+    vehicle_type: string;
+    vehicle_plate: string;
+}): Promise<ActionResult> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
+        }
 
-    if (profileError) {
-        console.error('[requestDriverActivation] Error updating profile:', profileError);
-        return { success: false, error: profileError.message };
+        const supabase = await createUserClient();
+
+        // Check if already a driver
+        const { data: existingDriver } = await supabase
+            .from("drivers")
+            .select("id")
+            .eq("profile_id", user.id)
+            .maybeSingle();
+
+        if (existingDriver) {
+            return { success: false, error: "Already registered as driver" };
+        }
+
+        // Create driver record
+        const { error: driverError } = await supabase.from("drivers").insert({
+            profile_id: user.id,
+            license_number: data.license_number,
+            vehicle_type: data.vehicle_type,
+            vehicle_plate: data.vehicle_plate,
+        });
+
+        if (driverError) {
+            console.error("[becomeDriver] Driver insert error:", driverError);
+            return { success: false, error: driverError.message };
+        }
+
+        // Update profile with driver flag and verification status
+        const { error: profileError } = await supabase
+            .from("profiles")
+            .update({
+                is_driver: true,
+                driver_verification_status: "pending" as VerificationStatus,
+                updated_at: new Date().toISOString(),
+            })
+            .eq("id", user.id);
+
+        if (profileError) {
+            console.error("[becomeDriver] Profile update error:", profileError);
+            return { success: false, error: profileError.message };
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error("[becomeDriver] Exception:", error);
+        return { success: false, error: "Failed to register as driver" };
     }
+}
 
-    return { success: true };
+// Admin-only profile actions
+export async function adminVerifySeller(
+    profileId: string,
+    approved: boolean,
+    reason?: string
+): Promise<ActionResult> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
+        }
+
+        // Verify admin status
+        const supabase = await createUserClient();
+        const { data: adminProfile } = await supabase
+            .from("profiles")
+            .select("is_admin")
+            .eq("id", user.id)
+            .maybeSingle();
+
+        if (!adminProfile?.is_admin) {
+            return { success: false, error: "Unauthorized" };
+        }
+
+        // Use admin client to bypass RLS
+        const adminClient = await createAdminClient();
+
+        const status: VerificationStatus = approved ? "approved" : "rejected";
+        const { error } = await adminClient
+            .from("profiles")
+            .update({
+                seller_verified: approved,
+                seller_verification_status: status,
+                seller_activated_at: approved ? new Date().toISOString() : null,
+                updated_at: new Date().toISOString(),
+            })
+            .eq("id", profileId);
+
+        if (error) {
+            console.error("[adminVerifySeller] Error:", error);
+            return { success: false, error: error.message };
+        }
+
+        // Log admin action
+        await adminClient.from("admin_logs").insert({
+            admin_id: user.id,
+            action: approved ? "approve_seller" : "reject_seller",
+            entity_type: "profile",
+            entity_id: profileId,
+            new_data: { status, reason },
+        });
+
+        return { success: true };
+    } catch (error) {
+        console.error("[adminVerifySeller] Exception:", error);
+        return { success: false, error: "Failed to verify seller" };
+    }
+}
+
+export async function adminVerifyDriver(
+    profileId: string,
+    approved: boolean,
+    reason?: string
+): Promise<ActionResult> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
+        }
+
+        // Verify admin status
+        const supabase = await createUserClient();
+        const { data: adminProfile } = await supabase
+            .from("profiles")
+            .select("is_admin")
+            .eq("id", user.id)
+            .maybeSingle();
+
+        if (!adminProfile?.is_admin) {
+            return { success: false, error: "Unauthorized" };
+        }
+
+        // Use admin client to bypass RLS
+        const adminClient = await createAdminClient();
+
+        const status: VerificationStatus = approved ? "approved" : "rejected";
+        const { error } = await adminClient
+            .from("profiles")
+            .update({
+                driver_verified: approved,
+                driver_verification_status: status,
+                driver_activated_at: approved ? new Date().toISOString() : null,
+                updated_at: new Date().toISOString(),
+            })
+            .eq("id", profileId);
+
+        if (error) {
+            console.error("[adminVerifyDriver] Error:", error);
+            return { success: false, error: error.message };
+        }
+
+        // Log admin action
+        await adminClient.from("admin_logs").insert({
+            admin_id: user.id,
+            action: approved ? "approve_driver" : "reject_driver",
+            entity_type: "profile",
+            entity_id: profileId,
+            new_data: { status, reason },
+        });
+
+        return { success: true };
+    } catch (error) {
+        console.error("[adminVerifyDriver] Exception:", error);
+        return { success: false, error: "Failed to verify driver" };
+    }
+}
+
+export async function adminGetAllProfiles(options?: {
+    page?: number;
+    limit?: number;
+    filter?: "all" | "buyers" | "sellers" | "drivers" | "pending_sellers" | "pending_drivers";
+}): Promise<ActionResult<{ profiles: Profile[]; total: number }>> {
+    try {
+        const user = await getUser();
+        if (!user) {
+            return { success: false, error: "Not authenticated" };
+        }
+
+        // Verify admin status
+        const supabase = await createUserClient();
+        const { data: adminProfile } = await supabase
+            .from("profiles")
+            .select("is_admin")
+            .eq("id", user.id)
+            .maybeSingle();
+
+        if (!adminProfile?.is_admin) {
+            return { success: false, error: "Unauthorized" };
+        }
+
+        const adminClient = await createAdminClient();
+        const page = options?.page || 1;
+        const limit = options?.limit || 20;
+        const offset = (page - 1) * limit;
+
+        let query = adminClient.from("profiles").select("*", { count: "exact" });
+
+        // Apply filters
+        if (options?.filter === "buyers") {
+            query = query.eq("is_buyer", true);
+        } else if (options?.filter === "sellers") {
+            query = query.eq("is_seller", true);
+        } else if (options?.filter === "drivers") {
+            query = query.eq("is_driver", true);
+        } else if (options?.filter === "pending_sellers") {
+            query = query
+                .eq("is_seller", true)
+                .eq("seller_verification_status", "pending");
+        } else if (options?.filter === "pending_drivers") {
+            query = query
+                .eq("is_driver", true)
+                .eq("driver_verification_status", "pending");
+        }
+
+        const { data: profiles, error, count } = await query
+            .order("created_at", { ascending: false })
+            .range(offset, offset + limit - 1);
+
+        if (error) {
+            console.error("[adminGetAllProfiles] Error:", error);
+            return { success: false, error: error.message };
+        }
+
+        return {
+            success: true,
+            data: {
+                profiles: profiles as Profile[],
+                total: count || 0,
+            },
+        };
+    } catch (error) {
+        console.error("[adminGetAllProfiles] Exception:", error);
+        return { success: false, error: "Failed to get profiles" };
+    }
 }

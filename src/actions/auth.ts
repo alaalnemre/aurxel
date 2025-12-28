@@ -1,88 +1,23 @@
-'use server';
+"use server";
 
-import { z } from 'zod';
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
+import { createUserClient } from "@/lib/supabase/server";
+import { redirect } from "@/i18n/navigation";
+import { cookies } from "next/headers";
+import { getLocale } from "next-intl/server";
+import type { Locale } from "@/i18n/routing";
 
-// Validation Schemas
-const registerSchema = z.object({
-    email: z.string().email('Invalid email address'),
-    password: z.string().min(6, 'Password must be at least 6 characters'),
-    fullName: z.string().min(2, 'Name must be at least 2 characters'),
-});
-
-const loginSchema = z.object({
-    email: z.string().email('Invalid email address'),
-    password: z.string().min(1, 'Password is required'),
-});
-
-const resetPasswordSchema = z.object({
-    email: z.string().email('Invalid email address'),
-});
-
-const updatePasswordSchema = z.object({
-    password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-
-// Types
-export type ActionResult<T = void> = {
+export interface AuthResult {
     success: boolean;
-    data?: T;
     error?: string;
-};
-
-// Register User
-export async function registerUser(formData: FormData): Promise<ActionResult> {
-    const supabase = await createClient();
-
-    const rawData = {
-        email: formData.get('email') as string,
-        password: formData.get('password') as string,
-        fullName: formData.get('fullName') as string,
-    };
-
-    const validation = registerSchema.safeParse(rawData);
-    if (!validation.success) {
-        return { success: false, error: validation.error.errors[0].message };
-    }
-
-    const { email, password, fullName } = validation.data;
-
-    const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-            data: {
-                full_name: fullName,
-            },
-        },
-    });
-
-    if (error) {
-        console.error('[registerUser] Error:', error);
-        return { success: false, error: error.message };
-    }
-
-    return { success: true };
+    redirectTo?: string;
 }
 
-// Login User
-export async function loginUser(formData: FormData): Promise<ActionResult<{ redirectTo: string }>> {
-    const supabase = await createClient();
-
-    const rawData = {
-        email: formData.get('email') as string,
-        password: formData.get('password') as string,
-    };
-
-    const locale = (formData.get('locale') as string) || 'en';
-
-    const validation = loginSchema.safeParse(rawData);
-    if (!validation.success) {
-        return { success: false, error: validation.error.errors[0].message };
-    }
-
-    const { email, password } = validation.data;
+export async function loginUser(
+    email: string,
+    password: string
+): Promise<AuthResult> {
+    const supabase = await createUserClient();
+    const locale = (await getLocale()) as Locale;
 
     const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -90,100 +25,132 @@ export async function loginUser(formData: FormData): Promise<ActionResult<{ redi
     });
 
     if (error) {
-        console.error('[loginUser] Error:', error);
-        return { success: false, error: error.message };
+        console.error("[loginUser] Error:", error);
+        return {
+            success: false,
+            error: error.message,
+        };
     }
 
     if (!data.user) {
-        return { success: false, error: 'Login failed' };
+        return {
+            success: false,
+            error: "Login failed",
+        };
     }
 
-    // Get profile to determine redirect
+    // Get user profile to determine redirect
     const { data: profile } = await supabase
-        .from('profiles')
-        .select('is_admin, seller_verified, driver_verified')
-        .eq('id', data.user.id)
-        .maybeSingle();
+        .from("profiles")
+        .select("is_admin, is_seller, seller_verified, is_driver, driver_verified")
+        .eq("id", data.user.id)
+        .maybeSingle() as { data: { is_admin: boolean; is_seller: boolean; seller_verified: boolean; is_driver: boolean; driver_verified: boolean } | null };
 
-    let redirectTo = `/${locale}/store`;
+    // Determine redirect based on capabilities
+    let redirectPath = `/${locale}/store`;
 
     if (profile?.is_admin) {
-        redirectTo = `/${locale}/admin`;
-    } else if (profile?.seller_verified) {
-        redirectTo = `/${locale}/seller`;
-    } else if (profile?.driver_verified) {
-        redirectTo = `/${locale}/driver`;
+        redirectPath = `/${locale}/admin`;
+    } else if (profile?.is_seller && profile?.seller_verified) {
+        redirectPath = `/${locale}/seller`;
+    } else if (profile?.is_driver && profile?.driver_verified) {
+        redirectPath = `/${locale}/driver`;
+    } else {
+        redirectPath = `/${locale}/store`;
     }
 
-    return { success: true, data: { redirectTo } };
+    return {
+        success: true,
+        redirectTo: redirectPath,
+    };
 }
 
-// Logout User
-export async function logoutUser(): Promise<ActionResult> {
-    const supabase = await createClient();
+export async function registerUser(
+    email: string,
+    password: string,
+    fullName: string,
+    phone?: string
+): Promise<AuthResult> {
+    const supabase = await createUserClient();
+    const locale = (await getLocale()) as Locale;
 
-    const { error } = await supabase.auth.signOut();
+    const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+            data: {
+                full_name: fullName,
+                phone: phone || null,
+            },
+        },
+    });
 
     if (error) {
-        console.error('[logoutUser] Error:', error);
-        return { success: false, error: error.message };
+        console.error("[registerUser] Error:", error);
+        return {
+            success: false,
+            error: error.message,
+        };
     }
 
-    return { success: true };
+    if (!data.user) {
+        return {
+            success: false,
+            error: "Registration failed",
+        };
+    }
+
+    return {
+        success: true,
+        redirectTo: `/${locale}/store`,
+    };
 }
 
-// Request Password Reset
-export async function requestPasswordReset(formData: FormData): Promise<ActionResult> {
-    const supabase = await createClient();
+export async function logoutUser(): Promise<void> {
+    const supabase = await createUserClient();
+    const locale = (await getLocale()) as Locale;
 
-    const rawData = {
-        email: formData.get('email') as string,
-    };
+    await supabase.auth.signOut();
 
-    const locale = (formData.get('locale') as string) || 'en';
+    redirect({ href: "/login", locale });
+}
 
-    const validation = resetPasswordSchema.safeParse(rawData);
-    if (!validation.success) {
-        return { success: false, error: validation.error.errors[0].message };
-    }
-
-    const { email } = validation.data;
+export async function resetPassword(email: string): Promise<AuthResult> {
+    const supabase = await createUserClient();
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/${locale}/reset-password/update`,
+        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?type=recovery`,
     });
 
     if (error) {
-        console.error('[requestPasswordReset] Error:', error);
-        return { success: false, error: error.message };
+        console.error("[resetPassword] Error:", error);
+        return {
+            success: false,
+            error: error.message,
+        };
     }
 
-    return { success: true };
+    return {
+        success: true,
+    };
 }
 
-// Update Password
-export async function updatePassword(formData: FormData): Promise<ActionResult> {
-    const supabase = await createClient();
-
-    const rawData = {
-        password: formData.get('password') as string,
-    };
-
-    const validation = updatePasswordSchema.safeParse(rawData);
-    if (!validation.success) {
-        return { success: false, error: validation.error.errors[0].message };
-    }
-
-    const { password } = validation.data;
+export async function updatePassword(newPassword: string): Promise<AuthResult> {
+    const supabase = await createUserClient();
 
     const { error } = await supabase.auth.updateUser({
-        password,
+        password: newPassword,
     });
 
     if (error) {
-        console.error('[updatePassword] Error:', error);
-        return { success: false, error: error.message };
+        console.error("[updatePassword] Error:", error);
+        return {
+            success: false,
+            error: error.message,
+        };
     }
 
-    return { success: true };
+    return {
+        success: true,
+    };
 }
