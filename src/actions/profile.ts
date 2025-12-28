@@ -66,7 +66,7 @@ export async function updateProfile(formData: FormData): Promise<ActionResult> {
     return { success: true };
 }
 
-// Request Seller Activation
+// Request Seller Activation (idempotent - handles both new and existing seller records)
 export async function requestSellerActivation(formData: FormData): Promise<ActionResult> {
     const supabase = await createClient();
 
@@ -75,10 +75,10 @@ export async function requestSellerActivation(formData: FormData): Promise<Actio
         return { success: false, error: 'Unauthorized' };
     }
 
-    // Check if already requested or verified
+    // Check if already verified (cannot re-submit if verified)
     const { data: profile } = await supabase
         .from('profiles')
-        .select('seller_requested, seller_verified')
+        .select('seller_verified')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -86,10 +86,7 @@ export async function requestSellerActivation(formData: FormData): Promise<Actio
         return { success: false, error: 'Already verified as seller' };
     }
 
-    if (profile?.seller_requested) {
-        return { success: false, error: 'Already submitted a request' };
-    }
-
+    // Validate form data
     const rawData = {
         storeName: formData.get('storeName') as string,
         description: formData.get('description') as string || undefined,
@@ -105,25 +102,57 @@ export async function requestSellerActivation(formData: FormData): Promise<Actio
 
     const { storeName, description, storeAddress, storeCity, storePhone } = validation.data;
 
-    // Create seller record
-    const { error: sellerError } = await supabase
+    // Check if a seller record already exists for this profile
+    const { data: existingSeller, error: fetchError } = await supabase
         .from('sellers')
-        .insert({
-            profile_id: user.id,
-            store_name: storeName,
-            description,
-            store_address: storeAddress,
-            store_city: storeCity,
-            store_phone: storePhone,
-            status: 'pending',
-        });
+        .select('id')
+        .eq('profile_id', user.id)
+        .maybeSingle();
 
-    if (sellerError) {
-        console.error('[requestSellerActivation] Error creating seller:', sellerError);
-        return { success: false, error: sellerError.message };
+    if (fetchError) {
+        console.error('[requestSellerActivation] Error fetching existing seller:', fetchError);
+        return { success: false, error: 'Failed to check existing seller record' };
     }
 
-    // Update profile flag
+    if (existingSeller) {
+        // UPDATE existing seller record (re-submission)
+        const { error: updateError } = await supabase
+            .from('sellers')
+            .update({
+                store_name: storeName,
+                description,
+                store_address: storeAddress,
+                store_city: storeCity,
+                store_phone: storePhone,
+                status: 'pending', // Reset status to pending on re-submission
+            })
+            .eq('id', existingSeller.id);
+
+        if (updateError) {
+            console.error('[requestSellerActivation] Error updating seller:', updateError);
+            return { success: false, error: updateError.message };
+        }
+    } else {
+        // INSERT new seller record
+        const { error: insertError } = await supabase
+            .from('sellers')
+            .insert({
+                profile_id: user.id,
+                store_name: storeName,
+                description,
+                store_address: storeAddress,
+                store_city: storeCity,
+                store_phone: storePhone,
+                status: 'pending',
+            });
+
+        if (insertError) {
+            console.error('[requestSellerActivation] Error creating seller:', insertError);
+            return { success: false, error: insertError.message };
+        }
+    }
+
+    // Update profile flag (idempotent - safe to set multiple times)
     const { error: profileError } = await supabase
         .from('profiles')
         .update({ seller_requested: true })
@@ -137,7 +166,7 @@ export async function requestSellerActivation(formData: FormData): Promise<Actio
     return { success: true };
 }
 
-// Request Driver Activation
+// Request Driver Activation (idempotent - handles both new and existing driver records)
 export async function requestDriverActivation(formData: FormData): Promise<ActionResult> {
     const supabase = await createClient();
 
@@ -146,10 +175,10 @@ export async function requestDriverActivation(formData: FormData): Promise<Actio
         return { success: false, error: 'Unauthorized' };
     }
 
-    // Check if already requested or verified
+    // Check if already verified (cannot re-submit if verified)
     const { data: profile } = await supabase
         .from('profiles')
-        .select('driver_requested, driver_verified')
+        .select('driver_verified')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -157,10 +186,7 @@ export async function requestDriverActivation(formData: FormData): Promise<Actio
         return { success: false, error: 'Already verified as driver' };
     }
 
-    if (profile?.driver_requested) {
-        return { success: false, error: 'Already submitted a request' };
-    }
-
+    // Validate form data
     const rawData = {
         vehicleType: formData.get('vehicleType') as string,
         plateNumber: formData.get('plateNumber') as string,
@@ -173,22 +199,51 @@ export async function requestDriverActivation(formData: FormData): Promise<Actio
 
     const { vehicleType, plateNumber } = validation.data;
 
-    // Create driver record
-    const { error: driverError } = await supabase
+    // Check if a driver record already exists for this profile
+    const { data: existingDriver, error: fetchError } = await supabase
         .from('drivers')
-        .insert({
-            profile_id: user.id,
-            vehicle_type: vehicleType,
-            plate_number: plateNumber,
-            status: 'pending',
-        });
+        .select('id')
+        .eq('profile_id', user.id)
+        .maybeSingle();
 
-    if (driverError) {
-        console.error('[requestDriverActivation] Error creating driver:', driverError);
-        return { success: false, error: driverError.message };
+    if (fetchError) {
+        console.error('[requestDriverActivation] Error fetching existing driver:', fetchError);
+        return { success: false, error: 'Failed to check existing driver record' };
     }
 
-    // Update profile flag
+    if (existingDriver) {
+        // UPDATE existing driver record (re-submission)
+        const { error: updateError } = await supabase
+            .from('drivers')
+            .update({
+                vehicle_type: vehicleType,
+                plate_number: plateNumber,
+                status: 'pending', // Reset status to pending on re-submission
+            })
+            .eq('id', existingDriver.id);
+
+        if (updateError) {
+            console.error('[requestDriverActivation] Error updating driver:', updateError);
+            return { success: false, error: updateError.message };
+        }
+    } else {
+        // INSERT new driver record
+        const { error: insertError } = await supabase
+            .from('drivers')
+            .insert({
+                profile_id: user.id,
+                vehicle_type: vehicleType,
+                plate_number: plateNumber,
+                status: 'pending',
+            });
+
+        if (insertError) {
+            console.error('[requestDriverActivation] Error creating driver:', insertError);
+            return { success: false, error: insertError.message };
+        }
+    }
+
+    // Update profile flag (idempotent - safe to set multiple times)
     const { error: profileError } = await supabase
         .from('profiles')
         .update({ driver_requested: true })
