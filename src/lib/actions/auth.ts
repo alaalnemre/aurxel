@@ -7,18 +7,24 @@ import type { RegisterFormData, LoginFormData } from '@/lib/types/database';
 /**
  * Register a new user and create their profile
  */
-export async function registerUser(formData: RegisterFormData) {
+export async function registerUser(formData: FormData) {
     const supabase = await createClient();
+
+    const email = formData.get(' email') as string;
+    const password = formData.get('password') as string;
+    const full_name = formData.get('full_name') as string;
+    const phone = formData.get('phone') as string;
+    const role = formData.get('role') as string;
 
     // Register user with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
+        email,
+        password,
         options: {
             data: {
-                full_name: formData.full_name,
-                phone: formData.phone,
-                role: formData.role,
+                full_name,
+                phone,
+                role,
             },
         },
     });
@@ -36,7 +42,7 @@ export async function registerUser(formData: RegisterFormData) {
     // Redirect based on role
     const locale = 'ar'; // Default locale
 
-    switch (formData.role) {
+    switch (role) {
         case 'vendor':
             redirect(`/${locale}/vendor/onboarding`);
         case 'driver':
@@ -51,12 +57,15 @@ export async function registerUser(formData: RegisterFormData) {
 /**
  * Login an existing user
  */
-export async function loginUser(formData: LoginFormData) {
+export async function loginUser(formData: FormData) {
     const supabase = await createClient();
 
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
+        email,
+        password,
     });
 
     if (authError) {

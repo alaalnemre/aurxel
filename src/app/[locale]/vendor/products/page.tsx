@@ -14,6 +14,10 @@ export default async function ProductsPage() {
         .eq('user_id', user!.id)
         .single();
 
+    if (!vendor) {
+        return <div>Vendor not found</div>;
+    }
+
     // Get all vendor products
     const { data: products } = await supabase
         .from('products')
@@ -83,8 +87,8 @@ export default async function ProductsPage() {
                                         {product.price.toFixed(2)} JOD
                                     </span>
                                     <span className={`text-sm ${product.stock_quantity <= product.low_stock_threshold
-                                            ? 'text-error font-semibold'
-                                            : 'text-muted-foreground'
+                                        ? 'text-error font-semibold'
+                                        : 'text-muted-foreground'
                                         }`}>
                                         Stock: {product.stock_quantity}
                                     </span>

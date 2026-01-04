@@ -50,7 +50,7 @@ export function generateProductMetadata(productName: string, productDescription:
         title: `${productName} | MarketHub`,
         description: productDescription || `Buy ${productName} on MarketHub. Cash on Delivery available.`,
         openGraph: {
-            type: 'product',
+            type: 'website',
             title: productName,
             description: productDescription,
         },

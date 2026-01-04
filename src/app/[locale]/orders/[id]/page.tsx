@@ -119,8 +119,8 @@ export default async function OrderDetailPage({
                                         {/* Icon */}
                                         <div
                                             className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl z-10 transition-all ${isCompleted
-                                                    ? 'bg-primary text-white shadow-lg'
-                                                    : 'bg-muted text-muted-foreground'
+                                                ? 'bg-primary text-white shadow-lg'
+                                                : 'bg-muted text-muted-foreground'
                                                 } ${isCurrent ? 'ring-4 ring-primary/30' : ''}`}
                                         >
                                             {step.icon}
@@ -160,7 +160,7 @@ export default async function OrderDetailPage({
                 <div className="bg-card border border-border rounded-xl p-6 mb-6">
                     <h2 className="text-xl font-semibold mb-4">Order Items</h2>
                     <div className="space-y-4">
-                        {order.items?.map((item) => (
+                        {order.items?.map((item: any) => (
                             <div key={item.id} className="flex gap-4 pb-4 border-b border-border last:border-0 last:pb-0">
                                 <div className="w-20 h-20 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
                                     {item.product_image_url ? (

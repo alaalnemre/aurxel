@@ -43,14 +43,14 @@ export default async function OrdersPage({
 
     return (
         <div className="min-h-screen bg-background py-8">
-            < div className="container mx-auto px-4 max-w-6xl" >
+            <div className="container mx-auto px-4 max-w-6xl">
                 {/* Page Header */}
-                < div className="mb-8" >
+                <div className="mb-8">
                     <h1 className="text-3xl font-bold">My Orders</h1>
                     <p className="text-muted-foreground mt-1">
                         Track and manage your orders
                     </p>
-                </div >
+                </div>
 
                 {/* Orders List */}
                 {
@@ -162,7 +162,7 @@ export default async function OrdersPage({
                         </div>
                     )
                 }
-            </div >
-        </div >
+            </div>
+        </div>
     );
 }

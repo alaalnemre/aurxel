@@ -13,7 +13,11 @@ export default async function VendorOrdersPage() {
         .eq('user_id', user!.id)
         .single();
 
-    // Get all vendor orders with customer info
+    if (!vendor) {
+        return <div>Vendor not found</div>;
+    }
+
+    // Get all vendor orders with customer  info
     const { data: orders } = await supabase
         .from('orders')
         .select(`
