@@ -1,76 +1,180 @@
-# JordanMarket Deployment Checklist
+# Deployment Guide - Vercel
 
 ## Prerequisites
 
-- [ ] Supabase project created
-- [ ] Vercel account linked to GitHub repo
+- Supabase project created and configured
+- Environment variables ready
+- GitHub repository (recommended)
 
-## Environment Variables
+## Step 1: Prepare Environment Variables
 
-Configure these in Vercel Project Settings > Environment Variables:
+Create `.env.production` with:
 
-| Variable | Description |
-|----------|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (secret) |
-| `NEXT_PUBLIC_SITE_URL` | Production URL (e.g., https://jordanmarket.vercel.app) |
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+```
 
-## Database Setup
+## Step 2: Vercel Deployment
 
-1. **Run Migration**
-   - Go to Supabase Dashboard > SQL Editor
-   - Copy contents of `supabase/migrations/001_initial_schema.sql`
-   - Execute the SQL
+### Option A: Deploy via Vercel Dashboard
 
-2. **Seed Data (Optional)**
-   - Execute `supabase/seed.sql` for sample discount codes
+1. Go to [vercel.com](https://vercel.com)
+2. Click "Add New Project"
+3. Import your GitHub repository
+4. Configure:
+   - **Framework Preset**: Next.js
+   - **Root Directory**: `./`
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `.next`
 
-3. **Create Admin User**
-   - Register a user through the app
-   - In Supabase SQL Editor, run:
-   ```sql
-   UPDATE profiles SET is_admin = true WHERE email = 'your-admin@email.com';
-   ```
+5. Add environment variables from `.env.production`
+6. Click "Deploy"
 
-## Supabase Configuration
+### Option B: Deploy via Vercel CLI
 
-1. **Authentication**
-   - Enable Email/Password provider
-   - Set Site URL in Auth > URL Configuration
-   - Add redirect URLs for production
+```bash
+# Install Vercel CLI
+npm i -g vercel
 
-2. **RLS Policies**
-   - Verify RLS is enabled (migration does this automatically)
+# Login to Vercel
+vercel login
 
-## Vercel Deployment
+# Deploy to production
+vercel --prod
+```
 
-1. **Connect Repository**
-   - Import from GitHub
-   - Framework: Next.js (auto-detected)
+## Step 3: Configure Custom Domain (Optional)
 
-2. **Build Settings**
-   - Build Command: `npm run build`
-   - Output Directory: `.next`
-   - Install Command: `npm install`
+1. In Vercel dashboard, go to your project
+2. Navigate to "Settings" → "Domains"
+3. Add your custom domain
+4. Update DNS records as instructed
 
-3. **Deploy**
-   - Push to main branch
-   - Vercel auto-deploys
+## Step 4: Post-Deployment
 
-## Post-Deployment
+### Update Supabase Settings
 
-- [ ] Verify auth flow (register, login, logout)
-- [ ] Verify buyer dashboard loads
-- [ ] Verify store page loads
-- [ ] Create test seller account
-- [ ] Admin approves seller
-- [ ] Seller adds product
-- [ ] Buyer can add to cart & checkout
+1. Go to Supabase Dashboard
+2. Navigate to "Authentication" → "URL Configuration"
+3. Add your Vercel URL to "Site URL"
+4. Add callback URLs:
+   - `https://your-domain.vercel.app/auth/callback`
+   - `https://your-domain.vercel.app/en/auth/callback`
+   - `https://your-domain.vercel.app/ar/auth/callback`
 
-## Production Checklist
+### Enable Supabase Realtime (Optional)
 
-- [ ] Custom domain configured
-- [ ] SSL enabled (automatic on Vercel)
-- [ ] Error tracking setup (optional: Sentry)
-- [ ] Analytics setup (optional: Google Analytics)
+For real-time features in the future:
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE orders;
+ALTER PUBLICATION supabase_realtime ADD TABLE deliveries;
+```
+
+## Step 5: Verify Deployment
+
+Test these critical flows:
+- ✅ Registration (all roles)
+- ✅ Login and role-based redirects
+- ✅ Admin panel access
+- ✅ Vendor onboarding
+- ✅ Product creation
+- ✅ Order placement
+- ✅ Driver deliveries
+
+## Environment Variables Reference
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL | `https://xxx.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key | `eyJhbG...` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (server-side only) | `eyJhbG...` |
+
+## Performance Optimization
+
+### Vercel Configuration
+
+Create `vercel.json`:
+```json
+{
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "outputDirectory": ".next"
+}
+```
+
+### Enable Compression
+
+Already configured in Next.js, but verify in `next.config.ts`:
+```typescript
+compress: true
+```
+
+## Monitoring
+
+### Enable Vercel Analytics
+
+1. In project settings, enable "Analytics"
+2. Add to `layout.tsx`:
+```tsx
+import { Analytics } from '@vercel/analytics/react';
+
+<Analytics />
+```
+
+### Enable Speed Insights
+
+```bash
+npm install @vercel/speed-insights
+```
+
+Add to `layout.tsx`:
+```tsx
+import { SpeedInsights } from '@vercel/speed-insights/next';
+
+<SpeedInsights />
+```
+
+## Troubleshooting
+
+### Build Failures
+
+- Check TypeScript errors: `npm run build`
+- Verify all dependencies are in `package.json`
+- Check Node.js version (use LTS)
+
+### Authentication Issues
+
+- Verify Supabase callback URLs
+- Check environment variables are set correctly
+- Ensure `.env.local` is not deployed (use Vercel env vars)
+
+### Performance Issues
+
+- Enable Next.js Image Optimization
+- Use Vercel Edge Functions for API routes
+- Enable caching headers
+
+## Security Checklist
+
+- [ ] Environment variables set in Vercel (not in code)
+- [ ] Supabase RLS policies enabled
+- [ ] CORS configured in Supabase
+- [ ] API rate limiting configured
+- [ ] Content Security Policy headers set
+
+## Rollback Strategy
+
+Vercel keeps deployment history:
+1. Go to "Deployments" tab
+2. Find previous working deployment
+3. Click "Promote to Production"
+
+---
+
+**Ready for Production!** 🚀
+
+Your multi-vendor marketplace is now live and accessible worldwide.

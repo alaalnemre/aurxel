@@ -1,11 +1,18 @@
-import { NextIntlClientProvider } from "next-intl";
-import { getMessages, getLocale } from "next-intl/server";
-import { notFound } from "next/navigation";
-import { routing } from "@/i18n/routing";
-import "@/styles/globals.css";
+import { NextIntlClientProvider } from 'next-intl';
+import { getMessages } from 'next-intl/server';
+import { notFound } from 'next/navigation';
+import type { Metadata } from 'next';
+import '../globals.css';
+import { locales } from '@/i18n';
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const metadata: Metadata = {
+    title: 'MarketHub - Multi-Vendor Marketplace',
+    description: 'Your trusted multi-vendor marketplace in Jordan',
+};
+
+export function generateStaticParams() {
+    return locales.map((locale) => ({ locale }));
+}
 
 export default async function LocaleLayout({
     children,
@@ -16,28 +23,21 @@ export default async function LocaleLayout({
 }) {
     const { locale } = await params;
 
-    if (!routing.locales.includes(locale as "ar" | "en")) {
+    // Ensure that the incoming `locale` is valid
+    if (!locales.includes(locale as 'en' | 'ar')) {
         notFound();
     }
 
+    // Providing all messages to the client
+    // side is the easiest way to get started
     const messages = await getMessages();
-    const dir = locale === "ar" ? "rtl" : "ltr";
+
+    // Determine text direction based on locale
+    const dir = locale === 'ar' ? 'rtl' : 'ltr';
 
     return (
         <html lang={locale} dir={dir}>
-            <head>
-                <meta charSet="utf-8" />
-                <meta name="viewport" content="width=device-width, initial-scale=1" />
-                <link rel="preconnect" href="https://fonts.googleapis.com" />
-                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-                <link
-                    href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
-                    rel="stylesheet"
-                />
-                <title>JordanMarket</title>
-                <meta name="description" content="Jordan's Premier Multi-Vendor Marketplace" />
-            </head>
-            <body className="min-h-screen bg-gray-50">
+            <body className="antialiased">
                 <NextIntlClientProvider messages={messages}>
                     {children}
                 </NextIntlClientProvider>
