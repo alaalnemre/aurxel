@@ -20,9 +20,9 @@ export default async function LocaleLayout({
     params,
 }: {
     children: React.ReactNode;
-    params: Promise<{ locale: string }>;
+    params: { locale: string };
 }) {
-    const { locale } = await params;
+    const { locale } = params;
 
     // Ensure that the incoming `locale` is valid
     if (!locales.includes(locale as 'en' | 'ar')) {
@@ -31,7 +31,7 @@ export default async function LocaleLayout({
 
     // Providing all messages to the client
     // side is the easiest way to get started
-    const messages = await getMessages();
+    const messages = await getMessages({ locale });
 
     // Determine text direction based on locale
     const dir = locale === 'ar' ? 'rtl' : 'ltr';

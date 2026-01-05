@@ -18,15 +18,15 @@ export default async function HomePage() {
                     <div className="flex flex-wrap gap-4 justify-center">
                         <a
                             href="/en/shop"
-                            className="px-8 py-4 bg-primary text-white rounded-lg font-semibold hover:bg-primary-hover transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+                            className="px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
                         >
-                            Start Shopping
+                            {t('startShopping')}
                         </a>
                         <a
                             href="/en/vendor/onboarding"
-                            className="px-8 py-4 bg-secondary text-white rounded-lg font-semibold hover:bg-secondary-hover transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+                            className="px-8 py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
                         >
-                            Become a Vendor
+                            {t('becomeVendor')}
                         </a>
                     </div>
                 </div>
@@ -36,21 +36,21 @@ export default async function HomePage() {
                     <h2 className="text-3xl font-bold text-center mb-12">{t('categories')}</h2>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
                         {[
-                            { name: 'Shop', icon: '🛍️', color: 'from-blue-400 to-blue-600' },
-                            { name: 'Food', icon: '🍔', color: 'from-orange-400 to-red-600' },
-                            { name: 'Pharmacy', icon: '💊', color: 'from-green-400 to-emerald-600' },
-                            { name: 'Grocery', icon: '🥬', color: 'from-lime-400 to-green-600' },
-                            { name: 'Parcel', icon: '📦', color: 'from-amber-400 to-orange-600' },
-                            { name: 'Rental', icon: '🚗', color: 'from-purple-400 to-indigo-600' },
+                            { key: 'categoryShop', icon: '🛍️', color: 'from-blue-400 to-blue-600' },
+                            { key: 'categoryFood', icon: '🍔', color: 'from-orange-400 to-red-600' },
+                            { key: 'categoryPharmacy', icon: '💊', color: 'from-green-400 to-emerald-600' },
+                            { key: 'categoryGrocery', icon: '🥬', color: 'from-lime-400 to-green-600' },
+                            { key: 'categoryParcel', icon: '📦', color: 'from-amber-400 to-orange-600' },
+                            { key: 'categoryRental', icon: '🚗', color: 'from-purple-400 to-indigo-600' },
                         ].map((category) => (
                             <div
-                                key={category.name}
+                                key={category.key}
                                 className="bg-card rounded-2xl p-6 text-center hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2 cursor-pointer border border-border"
                             >
                                 <div className={`text-5xl mb-3 bg-gradient-to-br ${category.color} w-20 h-20 rounded-full flex items-center justify-center mx-auto shadow-lg`}>
                                     {category.icon}
                                 </div>
-                                <h3 className="font-semibold text-lg">{category.name}</h3>
+                                <h3 className="font-semibold text-lg">{t(category.key)}</h3>
                             </div>
                         ))}
                     </div>

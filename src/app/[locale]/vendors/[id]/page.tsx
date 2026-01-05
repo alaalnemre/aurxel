@@ -5,9 +5,9 @@ import Link from 'next/link';
 export default async function VendorStorePage({
     params,
 }: {
-    params: Promise<{ id: string; locale: string }>;
+    params: { id: string; locale: string };
 }) {
-    const { id, locale } = await params;
+    const { id, locale } = params;
     const supabase = await createClient();
 
     // Get vendor info

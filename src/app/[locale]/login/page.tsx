@@ -5,10 +5,12 @@ import Link from 'next/link';
 export default async function LoginPage({
     params,
 }: {
-    params: Promise<{ locale: string }>;
+    params: { locale: string };
 }) {
-    const { locale } = await params;
-    const t = await getTranslations('auth');
+    const { locale } = params;
+    const tAuth = await getTranslations('auth');
+    const tHome = await getTranslations('homepage');
+    const tCommon = await getTranslations('common');
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-primary-light via-background to-secondary-light flex items-center justify-center p-4">
@@ -16,10 +18,10 @@ export default async function LoginPage({
                 {/* Header */}
                 <div className="text-center mb-8">
                     <h1 className="text-3xl font-bold bg-gradient-to-r from-primary via-accent to-secondary bg-clip-text text-transparent">
-                        Welcome Back! 👋
+                        {tHome('welcomeBack')}
                     </h1>
                     <p className="text-muted-foreground mt-2">
-                        Sign in to your MarketHub account
+                        {tHome('signInToAccount')}
                     </p>
                 </div>
 
@@ -28,7 +30,7 @@ export default async function LoginPage({
                     {/* Email */}
                     <div>
                         <label className="block text-sm font-medium mb-2">
-                            Email Address *
+                            {tHome('emailAddress')} *
                         </label>
                         <input
                             type="email"
@@ -42,14 +44,14 @@ export default async function LoginPage({
                     {/* Password */}
                     <div>
                         <label className="block text-sm font-medium mb-2">
-                            Password *
+                            {tCommon('password')} *
                         </label>
                         <input
                             type="password"
                             name="password"
                             required
                             className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                            placeholder="Enter your password"
+                            placeholder={tHome('enterPassword')}
                         />
                     </div>
 
@@ -60,38 +62,38 @@ export default async function LoginPage({
                                 type="checkbox"
                                 className="w-4 h-4 text-primary rounded focus:ring-2 focus:ring-primary"
                             />
-                            <span className="text-sm">Remember me</span>
+                            <span className="text-sm">{tHome('rememberMe')}</span>
                         </label>
                         <a href="#" className="text-sm text-primary hover:underline">
-                            Forgot password?
+                            {tHome('forgotPassword')}
                         </a>
                     </div>
 
                     {/* Submit Button */}
                     <button
                         type="submit"
-                        className="w-full px-6 py-3 bg-gradient-to-r from-primary to-secondary text-white font-semibold rounded-lg hover:opacity-90 transition-opacity shadow-lg"
+                        className="w-full px-6 py-3 bg-gradient-to-r from-emerald-600 to-amber-500 text-white font-semibold rounded-lg hover:opacity-90 transition-opacity shadow-lg"
                     >
-                        Sign In
+                        {tHome('signIn')}
                     </button>
                 </form>
 
                 {/* Divider */}
                 <div className="flex items-center gap-4 my-6">
                     <div className="flex-1 border-t border-border"></div>
-                    <span className="text-sm text-muted-foreground">OR</span>
+                    <span className="text-sm text-muted-foreground">{tHome('or')}</span>
                     <div className="flex-1 border-t border-border"></div>
                 </div>
 
                 {/* Register Link */}
                 <div className="text-center">
                     <p className="text-sm text-muted-foreground">
-                        Don't have an account?{' '}
+                        {tAuth('dontHaveAccount')}{' '}
                         <Link
                             href={`/${locale}/register`}
                             className="text-primary font-semibold hover:underline"
                         >
-                            Create Account
+                            {tHome('createAccount')}
                         </Link>
                     </p>
                 </div>
@@ -102,7 +104,7 @@ export default async function LoginPage({
                         href={`/${locale}`}
                         className="text-sm text-muted-foreground hover:text-primary"
                     >
-                        ← Back to Home
+                        {tHome('backToHome')}
                     </Link>
                 </div>
             </div>

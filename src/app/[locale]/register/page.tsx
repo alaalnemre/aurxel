@@ -5,10 +5,12 @@ import Link from 'next/link';
 export default async function RegisterPage({
     params,
 }: {
-    params: Promise<{ locale: string }>;
+    params: { locale: string };
 }) {
-    const { locale } = await params;
-    const t = await getTranslations('auth');
+    const { locale } = params;
+    const tAuth = await getTranslations('auth');
+    const tHome = await getTranslations('homepage');
+    const tCommon = await getTranslations('common');
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-primary-light via-background to-secondary-light flex items-center justify-center p-4">
@@ -16,10 +18,10 @@ export default async function RegisterPage({
                 {/* Header */}
                 <div className="text-center mb-8">
                     <h1 className="text-3xl font-bold bg-gradient-to-r from-primary via-accent to-secondary bg-clip-text text-transparent">
-                        Join MarketHub! 🚀
+                        {tAuth('joinMarketHub')}
                     </h1>
                     <p className="text-muted-foreground mt-2">
-                        Create your account and start your journey
+                        {tAuth('startYourJourney')}
                     </p>
                 </div>
 
@@ -28,14 +30,14 @@ export default async function RegisterPage({
                     {/* Full Name */}
                     <div>
                         <label className="block text-sm font-medium mb-2">
-                            Full Name *
+                            {tAuth('fullName')} *
                         </label>
                         <input
                             type="text"
                             name="full_name"
                             required
                             className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                            placeholder="Ahmad Al-Khaled"
+                            placeholder={tAuth('fullNamePlaceholder')}
                         />
                     </div>
 
@@ -43,7 +45,7 @@ export default async function RegisterPage({
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium mb-2">
-                                Email Address *
+                                {tHome('emailAddress')} *
                             </label>
                             <input
                                 type="email"
@@ -55,13 +57,13 @@ export default async function RegisterPage({
                         </div>
                         <div>
                             <label className="block text-sm font-medium mb-2">
-                                Phone Number
+                                {tAuth('phoneNumber')}
                             </label>
                             <input
                                 type="tel"
                                 name="phone"
                                 className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                                placeholder="+962 7X XXX XXXX"
+                                placeholder={tAuth('phonePlaceholder')}
                             />
                         </div>
                     </div>
@@ -70,7 +72,7 @@ export default async function RegisterPage({
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium mb-2">
-                                Password *
+                                {tCommon('password')} *
                             </label>
                             <input
                                 type="password"
@@ -78,12 +80,12 @@ export default async function RegisterPage({
                                 required
                                 minLength={6}
                                 className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                                placeholder="At least 6 characters"
+                                placeholder={tAuth('passwordPlaceholder')}
                             />
                         </div>
                         <div>
                             <label className="block text-sm font-medium mb-2">
-                                Confirm Password *
+                                {tCommon('confirmPassword')} *
                             </label>
                             <input
                                 type="password"
@@ -91,7 +93,7 @@ export default async function RegisterPage({
                                 required
                                 minLength={6}
                                 className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                                placeholder="Confirm your password"
+                                placeholder={tAuth('confirmPasswordPlaceholder')}
                             />
                         </div>
                     </div>
@@ -99,7 +101,7 @@ export default async function RegisterPage({
                     {/* Role Selection */}
                     <div>
                         <label className="block text-sm font-medium mb-3">
-                            I want to join as: *
+                            {tAuth('joinAs')} *
                         </label>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             {/* Customer */}
@@ -113,11 +115,11 @@ export default async function RegisterPage({
                                 />
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-xl">🛍️</span>
-                                        <span className="font-semibold">Customer</span>
+                                        <span className="text-xl">🛑️</span>
+                                        <span className="font-semibold">{tAuth('roleCustomer')}</span>
                                     </div>
                                     <p className="text-sm text-muted-foreground">
-                                        Shop from verified vendors
+                                        {tAuth('customerDescription')}
                                     </p>
                                 </div>
                             </label>
@@ -133,10 +135,10 @@ export default async function RegisterPage({
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className="text-xl">🏪</span>
-                                        <span className="font-semibold">Vendor/Seller</span>
+                                        <span className="font-semibold">{tAuth('roleVendor')}</span>
                                     </div>
                                     <p className="text-sm text-muted-foreground">
-                                        Sell your products online
+                                        {tAuth('vendorDescription')}
                                     </p>
                                 </div>
                             </label>
@@ -152,10 +154,10 @@ export default async function RegisterPage({
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className="text-xl">🚚</span>
-                                        <span className="font-semibold">Delivery Driver</span>
+                                        <span className="font-semibold">{tAuth('roleDriver')}</span>
                                     </div>
                                     <p className="text-sm text-muted-foreground">
-                                        Deliver orders and earn
+                                        {tAuth('driverDescription')}
                                     </p>
                                 </div>
                             </label>
@@ -173,13 +175,13 @@ export default async function RegisterPage({
                             className="mt-1 w-4 h-4 text-primary rounded focus:ring-2 focus:ring-primary"
                         />
                         <label className="text-sm text-muted-foreground">
-                            I agree to the{' '}
+                            {tAuth('agreeTerms')}{' '}
                             <a href="#" className="text-primary hover:underline">
-                                Terms of Service
+                                {tAuth('termsOfService')}
                             </a>{' '}
-                            and{' '}
+                            {tAuth('and')}{' '}
                             <a href="#" className="text-primary hover:underline">
-                                Privacy Policy
+                                {tAuth('privacyPolicy')}
                             </a>
                         </label>
                     </div>
@@ -187,28 +189,28 @@ export default async function RegisterPage({
                     {/* Submit Button */}
                     <button
                         type="submit"
-                        className="w-full px-6 py-3 bg-gradient-to-r from-primary to-secondary text-white font-semibold rounded-lg hover:opacity-90 transition-opacity shadow-lg"
+                        className="w-full px-6 py-3 bg-gradient-to-r from-emerald-600 to-amber-500 text-white font-semibold rounded-lg hover:opacity-90 transition-opacity shadow-lg"
                     >
-                        Create Account
+                        {tHome('createAccount')}
                     </button>
                 </form>
 
                 {/* Divider */}
                 <div className="flex items-center gap-4 my-6">
                     <div className="flex-1 border-t border-border"></div>
-                    <span className="text-sm text-muted-foreground">OR</span>
+                    <span className="text-sm text-muted-foreground">{tHome('or')}</span>
                     <div className="flex-1 border-t border-border"></div>
                 </div>
 
                 {/* Login Link */}
                 <div className="text-center">
                     <p className="text-sm text-muted-foreground">
-                        Already have an account?{' '}
+                        {tAuth('alreadyHaveAccount')}{' '}
                         <Link
                             href={`/${locale}/login`}
                             className="text-primary font-semibold hover:underline"
                         >
-                            Sign In
+                            {tHome('signIn')}
                         </Link>
                     </p>
                 </div>
@@ -219,7 +221,7 @@ export default async function RegisterPage({
                         href={`/${locale}`}
                         className="text-sm text-muted-foreground hover:text-primary"
                     >
-                        ← Back to Home
+                        {tHome('backToHome')}
                     </Link>
                 </div>
             </div>

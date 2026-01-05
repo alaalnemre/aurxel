@@ -5,9 +5,9 @@ import { createVendor } from '@/lib/actions/vendor';
 export default async function VendorOnboarding({
     params,
 }: {
-    params: Promise<{ locale: string }>;
+    params: { locale: string };
 }) {
-    const { locale } = await params;
+    const { locale } = params;
     const user = await getCurrentUser();
 
     if (!user || user.profile.role !== 'vendor') {

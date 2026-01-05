@@ -8,9 +8,9 @@ export default async function AdminLayout({
     params,
 }: {
     children: React.ReactNode;
-    params: Promise<{ locale: string }>;
+    params: { locale: string };
 }) {
-    const { locale } = await params;
+    const { locale } = params;
     const user = await getCurrentUser();
 
     // Check if user is authenticated and is admin

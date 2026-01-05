@@ -2,16 +2,16 @@ import { createClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/actions/auth';
 import { redirect } from 'next/navigation';
 
-export async function ProfilePage({
+export default async function ProfilePage({
     params,
 }: {
-    params: Promise<{ locale: string }>;
+    params: { locale: string };
 }) {
-    const { locale } = await params;
+    const { locale } = params;
     const user = await getCurrentUser();
 
     if (!user) {
-        redirect(`/${locale}/login`);
+        redirect(`/ ${locale}/login`);
     }
 
     const supabase = await createClient();
@@ -246,5 +246,3 @@ export async function ProfilePage({
         </div>
     );
 }
-
-export default ProfilePage;

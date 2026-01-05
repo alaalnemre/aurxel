@@ -6,9 +6,9 @@ import Link from 'next/link';
 export default async function OrdersPage({
     params,
 }: {
-    params: Promise<{ locale: string }>;
+    params: { locale: string };
 }) {
-    const { locale } = await params;
+    const { locale } = params;
     const user = await getCurrentUser();
 
     if (!user) {

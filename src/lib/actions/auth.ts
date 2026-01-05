@@ -17,6 +17,7 @@ export async function registerUser(formData: FormData) {
     const role = formData.get('role') as string;
 
     // Register user with Supabase Auth
+    // Profile will be automatically created by the handle_new_user database trigger
     const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -38,7 +39,21 @@ export async function registerUser(formData: FormData) {
         throw new Error('Registration failed - no user returned');
     }
 
-    // Profile is automatically created by the handle_new_user trigger
+    // Wait a moment for trigger to complete
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Check if profile was created
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+
+    if (profileError || !profile) {
+        console.error('[Auth] Profile verification error:', profileError?.message);
+        throw new Error('Database error saving new user');
+    }
+
     // Redirect based on role
     const locale = 'ar'; // Default locale
 

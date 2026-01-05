@@ -5,9 +5,9 @@ import { redirect, notFound } from 'next/navigation';
 export default async function OrderDetailPage({
     params,
 }: {
-    params: Promise<{ id: string; locale: string }>;
+    params: { id: string; locale: string };
 }) {
-    const { id, locale } = await params;
+    const { id, locale } = params;
     const user = await getCurrentUser();
 
     if (!user) {
