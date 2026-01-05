@@ -11,9 +11,7 @@ export const metadata: Metadata = {
     description: 'Your trusted multi-vendor marketplace in Jordan',
 };
 
-export function generateStaticParams() {
-    return locales.map((locale) => ({ locale }));
-}
+
 
 export default async function LocaleLayout({
     children,
@@ -28,6 +26,8 @@ export default async function LocaleLayout({
     if (!locales.includes(locale as 'en' | 'ar')) {
         notFound();
     }
+
+
 
     // Providing all messages to the client
     // side is the easiest way to get started

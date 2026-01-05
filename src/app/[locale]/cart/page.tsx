@@ -1,3 +1,6 @@
+export const dynamic = 'force-dynamic';
+import { getTranslations } from 'next-intl/server';
+
 export default async function CartPage() {
     // In a real app, cart data would come from a state management solution
     // or database. For now, this is a UI demonstration.
