@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import '../globals.css';
 import { locales } from '@/i18n';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 
 export const metadata: Metadata = {
     title: 'MarketHub - Multi-Vendor Marketplace',
@@ -41,6 +42,7 @@ export default async function LocaleLayout({
                 <NextIntlClientProvider messages={messages}>
                     {children}
                 </NextIntlClientProvider>
+                <SpeedInsights />
             </body>
         </html>
     );

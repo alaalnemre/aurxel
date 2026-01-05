@@ -41,37 +41,6 @@
   --card-foreground: #0f172a;
 }
 
-@theme inline {
-  /* Colors */
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-primary: var(--primary);
-  --color-primary-hover: var(--primary-hover);
-  --color-primary-light: var(--primary-light);
-  --color-secondary: var(--secondary);
-  --color-secondary-hover: var(--secondary-hover);
-  --color-secondary-light: var(--secondary-light);
-  --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-error: var(--error);
-  --color-info: var(--info);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-
-  /* Typography */
-  --font-sans: 'Inter', 'Cairo', system-ui, sans-serif;
-
-  /* Spacing */
-  --radius: 0.5rem;
-}
-
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0f172a;

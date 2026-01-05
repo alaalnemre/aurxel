@@ -10,7 +10,7 @@ import type { RegisterFormData, LoginFormData } from '@/lib/types/database';
 export async function registerUser(formData: FormData) {
     const supabase = await createClient();
 
-    const email = formData.get(' email') as string;
+    const email = formData.get('email') as string;
     const password = formData.get('password') as string;
     const full_name = formData.get('full_name') as string;
     const phone = formData.get('phone') as string;
